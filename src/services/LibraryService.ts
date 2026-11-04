@@ -138,6 +138,13 @@ class LibraryService {
     return this.items.filter((i) => i.folderId === folderId);
   }
 
+  /** Remove an inventory entry without deleting the underlying media file. */
+  async removeItem(itemId: string): Promise<void> {
+    await this.load();
+    this.items = this.items.filter((item) => item.id !== itemId);
+    await this.persistItems();
+  }
+
   async renameItem(
     itemId: string,
     options: { mode: 'file' | 'folder' | 'both'; fileName?: string; folderName?: string },
