@@ -16,6 +16,36 @@ app.setAppUserModelId('com.filmbaz.desktop');
 
 let mainWindow: BrowserWindow | null = null;
 const cancelledScans = new Set<string>();
+let localAiProcess: ReturnType<typeof spawn> | null = null;
+let localAiProcessKey = '';
+
+async function waitForLocalAi(child: ReturnType<typeof spawn>, port: number, timeoutMs = 120000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null || child.signalCode !== null || localAiProcess !== child) return false;
+    try {
+      const response = await fetch('http://127.0.0.1:' + port + '/health', {
+        signal: AbortSignal.timeout(1200),
+      });
+      if (response.ok) return true;
+    } catch { /* the model is still loading */ }
+    await new Promise((resolve) => setTimeout(resolve, 700));
+  }
+  return false;
+}
+
+async function stopLocalAi(): Promise<void> {
+  const child = localAiProcess;
+  localAiProcess = null;
+  localAiProcessKey = '';
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, 3000);
+    child.once('exit', () => { clearTimeout(timer); resolve(); });
+    child.kill();
+  });
+}
+
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -55,6 +85,128 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+
+// --- IPC: Managed local offline AI ---
+ipcMain.handle('ai:browseServer', async (): Promise<string | null> => {
+  const result = await dialog.showOpenDialog(mainWindow ?? undefined, {
+    title: 'انتخاب llama-server.exe',
+    filters: [{ name: 'برنامه اجرایی', extensions: ['exe'] }],
+    properties: ['openFile'],
+  });
+  return result.canceled ? null : (result.filePaths[0] ?? null);
+});
+
+ipcMain.handle('ai:browseModel', async (): Promise<string | null> => {
+  const result = await dialog.showOpenDialog(mainWindow ?? undefined, {
+    title: 'انتخاب فایل مدل GGUF',
+    filters: [{ name: 'مدل GGUF', extensions: ['gguf'] }],
+    properties: ['openFile'],
+  });
+  return result.canceled ? null : (result.filePaths[0] ?? null);
+});
+
+ipcMain.handle('ai:startLocal', async (
+  _evt,
+  serverPath: string,
+  modelPath: string,
+  port: number,
+): Promise<{ success: boolean; message: string }> => {
+  if (process.platform !== 'win32') {
+    return { success: false, message: 'اجرای خودکار مدل فعلاً فقط در نسخه ویندوز فعال است.' };
+  }
+  if (typeof serverPath !== 'string' || typeof modelPath !== 'string'
+    || !path.isAbsolute(serverPath) || !path.isAbsolute(modelPath)) {
+    return { success: false, message: 'مسیر فایل سرور یا مدل معتبر نیست.' };
+  }
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    return { success: false, message: 'شماره پورت باید بین ۱۰۲۴ تا ۶۵۵۳۵ باشد.' };
+  }
+
+  try {
+    const [serverStat, modelStat] = await Promise.all([
+      fs.promises.stat(serverPath),
+      fs.promises.stat(modelPath),
+    ]);
+    if (!serverStat.isFile() || path.extname(serverPath).toLowerCase() !== '.exe') {
+      return { success: false, message: 'فایل انتخاب‌شده llama-server.exe معتبر نیست.' };
+    }
+    if (!modelStat.isFile() || path.extname(modelPath).toLowerCase() !== '.gguf') {
+      return { success: false, message: 'فایل انتخاب‌شده مدل GGUF معتبر نیست.' };
+    }
+  } catch {
+    return { success: false, message: 'فایل سرور یا مدل در مسیر انتخاب‌شده پیدا نشد.' };
+  }
+
+  const processKey = [serverPath.toLowerCase(), modelPath.toLowerCase(), port].join('|');
+  try {
+    const existing = await fetch('http://127.0.0.1:' + port + '/health', {
+      signal: AbortSignal.timeout(1200),
+    });
+    if (existing.ok) return { success: true, message: 'سرور محلی روی این پورت از قبل آماده است.' };
+  } catch { /* no ready server on this port */ }
+
+  if (localAiProcess && localAiProcess.exitCode === null && localAiProcess.signalCode === null) {
+    if (localAiProcessKey === processKey) {
+      const ready = await waitForLocalAi(localAiProcess, port, 3000);
+      if (ready) return { success: true, message: 'مدل آفلاین از قبل اجرا شده است.' };
+    }
+    await stopLocalAi();
+  }
+
+  try {
+    const child = spawn(serverPath, [
+      '-m', modelPath,
+      '-c', '2048',
+      '-t', '2',
+      '-ngl', '0',
+      '--host', '127.0.0.1',
+      '--port', String(port),
+    ], {
+      detached: false,
+      stdio: 'ignore',
+      windowsHide: true,
+      cwd: path.dirname(serverPath),
+    });
+    localAiProcess = child;
+    localAiProcessKey = processKey;
+    child.once('exit', () => {
+      if (localAiProcess === child) {
+        localAiProcess = null;
+        localAiProcessKey = '';
+      }
+    });
+    child.once('error', () => {
+      if (localAiProcess === child) {
+        localAiProcess = null;
+        localAiProcessKey = '';
+      }
+    });
+
+    const ready = await waitForLocalAi(child, port);
+    if (!ready) {
+      await stopLocalAi();
+      return {
+        success: false,
+        message: 'مدل در زمان تعیین‌شده آماده نشد. مسیرها، سازگاری نسخه llama.cpp و حافظه آزاد را بررسی کن.',
+      };
+    }
+    return { success: true, message: 'مدل آفلاین با موفقیت اجرا شد.' };
+  } catch (error) {
+    await stopLocalAi();
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'اجرای سرور محلی ناموفق بود.',
+    };
+  }
+});
+
+ipcMain.handle('ai:stopLocal', async (): Promise<void> => {
+  await stopLocalAi();
+});
+
+app.on('before-quit', () => {
+  void stopLocalAi();
+});
 
 // Download remote artwork in Electron's main process. This avoids renderer CORS
 // restrictions while keeping filesystem access out of the renderer.
