@@ -10,17 +10,21 @@ export default function AIAssistantView({ movies }: { movies: Movie[] }) {
   const [input, setInput] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [busy, setBusy] = useState(false);
-  const libraryContext = useMemo(() => movies.slice(0, 100).map((m) => `${m.title} (${m.englishTitle}, ${m.year}) | ژانر: ${m.genres.join('، ')} | خلاصه: ${m.synopsis}`).join('\n'), [movies]);
+  const requestController = useRef<AbortController | null>(null);
 
   async function ask(text: string, systemPrompt?: string) {
     const prompt = text.trim();
     if (!prompt || busy) return;
     setMessages((old) => [...old, { role: 'user', content: prompt }]);
+    const estimatedTokens = Math.ceil(prompt.length / 2.5);
+    if (estimatedTokens > 3000 && !window.confirm(`حجم تقریبی درخواست: ${estimatedTokens.toLocaleString('fa-IR')} توکن. فقط متن همین درخواست ارسال می‌شود. ادامه می‌دهی؟`)) return;
     setInput(''); setBusy(true);
+    const controller = new AbortController();
+    requestController.current = controller;
     try {
       const response = await getAIService().chat({
-        systemPrompt: systemPrompt || `تو دستیار فارسی‌زبان برنامه FILM BAZ هستی. پاسخ‌ها دقیق، دوستانه و فارسی باشند. اگر اطلاعات کافی نداری صادقانه بگو. از این کتابخانه برای پیشنهادها استفاده کن و فیلمی را که در فهرست نیست به‌عنوان موجود در کتابخانه معرفی نکن:\n${libraryContext || 'کتابخانه هنوز خالی است.'}`,
-        userPrompt: prompt, maxTokens: 1200, temperature: 0.6,
+        systemPrompt: systemPrompt || 'تو دستیار فارسی‌زبان برنامه FILM BAZ هستی. پاسخ‌ها دقیق، دوستانه و فارسی باشند. اگر اطلاعات کافی نداری صادقانه بگو.',
+        userPrompt: prompt, maxTokens: 1200, temperature: 0.6, signal: controller.signal,
       });
       setMessages((old) => [...old, { role: 'assistant', content: response.content || 'پاسخی دریافت نشد.' }]);
     } catch (error) {
