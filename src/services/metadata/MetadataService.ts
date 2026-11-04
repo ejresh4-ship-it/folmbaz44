@@ -26,7 +26,6 @@ import { WikidataProvider } from './WikidataProvider';
 import { MediaWikiProvider } from './MediaWikiProvider';
 import { TVmazeProvider } from './TVmazeProvider';
 import type { MetadataProvider } from './MetadataProvider';
-import { getAIService } from '@/services/ai/AIService';
 
 const META_CACHE_KEY = 'film-baz:metadata-cache';
 const PROVIDER_CONFIG_KEY = 'film-baz:provider-configs';
@@ -287,36 +286,8 @@ class MetadataService {
     metadata.cachedAt = Date.now();
     if (metadata.rating > 0 && !metadata.ratingSource) metadata.ratingSource = metadata.providerName;
 
-    // Auto-translate title to Persian if AI is configured and no Persian title yet
-    if (!metadata.persianTitle) {
-      try {
-        const ai = getAIService();
-        if (ai.isConfigured()) {
-          const translated = await ai.translate(metadata.title);
-          if (translated && translated !== metadata.title) {
-            metadata.persianTitle = translated;
-          }
-        }
-      } catch {
-        // translation failure is non-fatal
-      }
-    }
-
-    if (metadata.overview && metadata.overviewLanguage !== 'fa') {
-      try {
-        const ai = getAIService();
-        if (ai.isConfigured()) {
-          const translatedOverview = await ai.translate(metadata.overview);
-          if (translatedOverview && translatedOverview !== metadata.overview) {
-            metadata.overview = translatedOverview;
-            metadata.overviewLanguage = 'fa';
-          }
-        }
-      } catch {
-        // Keep the original synopsis if translation is unavailable.
-      }
-    }
-
+    // AI is never called automatically during metadata retrieval. Translation remains
+    // available only from an explicit user action in the assistant.
     this.cache.set(metadata.id, metadata);
     this.itemToMetadata.set(itemId, metadata.id);
     await this.persistCache();
