@@ -47,17 +47,29 @@ export default function AISettingsPanel() {
   async function handleToggle(id: string) {
     const provider = providers.find((p) => p.id === id);
     if (!provider) return;
+
+    if (provider.type === 'llama-cpp' && window.filmBazDesktop?.isDesktop) {
+      setLocalAiBusy(true);
+      try {
+        if (!provider.enabled) {
+          const started = await service.startLocalModel();
+          setLocalAiMessage(started.message);
+          if (!started.success) return;
+          await service.updateProvider(id, { enabled: true });
+        } else {
+          await service.updateProvider(id, { enabled: false });
+          await service.stopLocalModel();
+          setLocalAiMessage('ارائه‌دهنده آفلاین غیرفعال شد و سرور متوقف شد.');
+        }
+        refresh();
+      } finally {
+        setLocalAiBusy(false);
+      }
+      return;
+    }
+
     await service.updateProvider(id, { enabled: !provider.enabled });
     refresh();
-    if (provider.type === 'llama-cpp') {
-      if (!provider.enabled) {
-        const result = await service.startLocalModel();
-        setLocalAiMessage(result.message);
-      } else {
-        await service.stopLocalModel();
-        setLocalAiMessage('ارائه‌دهنده آفلاین غیرفعال شد و سرور متوقف شد.');
-      }
-    }
   }
 
   async function handleUpdate(id: string, updates: Partial<AIProviderConfig>) {
@@ -267,16 +279,8 @@ export default function AISettingsPanel() {
 
                   {provider.type === 'llama-cpp' && (
                     <>
-                      <div className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
-                        <Cpu size={15} className="mt-0.5 flex-shrink-0 text-blue-400" />
-                        <p className="text-xs leading-relaxed text-text-secondary">
-                          برای استفاده از مدل آفلاین، ابتدا <code className="rounded bg-white/10 px-1 text-gold-bright" dir="ltr">llama-server</code>
-                          {' '}را روی پورت مورد نظر اجرا کنید. مثال:
-                          <br />
-                          <code className="mt-1 block rounded bg-white/10 px-1.5 py-1 text-[10px] text-gold-bright" dir="ltr">
-                            E:\Ai\llama-server.exe -m E:\Ai\qwen2.5-3b-instruct-q2_k.gguf -c 2048 -t 2 -ngl 0 --host 127.0.0.1 --port 1234
-                          </code>
-                        </p>
+                      <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 text-xs leading-relaxed text-text-secondary">
+                        فایل سرور و مدل را یک‌بار انتخاب کن. نسخه ویندوز FILM BAZ آن‌ها را خودش اجرا می‌کند؛ در نسخه وب باید سرور را جداگانه اجرا کنی.
                       </div>
                       <Field label="پورت سرور محلی">
                         <input
