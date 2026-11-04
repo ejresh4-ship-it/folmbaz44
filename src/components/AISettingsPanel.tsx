@@ -29,6 +29,8 @@ export default function AISettingsPanel() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, AIConnectionTestResult>>({});
+  const [localAiMessage, setLocalAiMessage] = useState('');
+  const [localAiBusy, setLocalAiBusy] = useState(false);
 
   useEffect(() => {
     service.load().then(() => {
@@ -47,6 +49,15 @@ export default function AISettingsPanel() {
     if (!provider) return;
     await service.updateProvider(id, { enabled: !provider.enabled });
     refresh();
+    if (provider.type === 'llama-cpp') {
+      if (!provider.enabled) {
+        const result = await service.startLocalModel();
+        setLocalAiMessage(result.message);
+      } else {
+        await service.stopLocalModel();
+        setLocalAiMessage('ارائه‌دهنده آفلاین غیرفعال شد و سرور متوقف شد.');
+      }
+    }
   }
 
   async function handleUpdate(id: string, updates: Partial<AIProviderConfig>) {
@@ -70,6 +81,39 @@ export default function AISettingsPanel() {
       await service.updateProvider(p.id, { priority: p.priority });
     }
     refresh();
+  }
+
+  async function chooseAiFile(kind: 'server' | 'model') {
+    if (!window.filmBazDesktop?.isDesktop) {
+      setLocalAiMessage('انتخاب فایل و اجرای خودکار در نسخه ویندوز در دسترس است.');
+      return;
+    }
+    const selected = kind === 'server'
+      ? await window.filmBazDesktop.browseForAiServer()
+      : await window.filmBazDesktop.browseForAiModel();
+    if (selected) {
+      await handleUpdate('llama-cpp', kind === 'server'
+        ? { localServerPath: selected }
+        : { localModelPath: selected });
+    }
+  }
+
+  async function handleLocalAi(start: boolean) {
+    setLocalAiBusy(true);
+    setLocalAiMessage(start ? 'در حال اجرای مدل؛ بارگذاری ممکن است کمی طول بکشد…' : 'در حال توقف مدل…');
+    try {
+      if (start) {
+        const result = await service.startLocalModel();
+        setLocalAiMessage(result.message);
+      } else {
+        await service.stopLocalModel();
+        setLocalAiMessage('سرور مدل متوقف شد.');
+      }
+    } catch (error) {
+      setLocalAiMessage(error instanceof Error ? error.message : 'عملیات ناموفق بود.');
+    } finally {
+      setLocalAiBusy(false);
+    }
   }
 
   async function handleTest(id: string) {
@@ -243,16 +287,38 @@ export default function AISettingsPanel() {
                           className="input-field"
                         />
                       </Field>
-                      <Field label="مسیر فایل مدل (اختیاری)">
-                        <input
-                          type="text"
-                          value={provider.localModelPath || ''}
-                          onChange={(e) => handleUpdate(provider.id, { localModelPath: e.target.value })}
-                          placeholder="C:\Models\qwen2.5-7b-instruct.gguf"
-                          dir="ltr"
-                          className="input-field"
-                        />
+                      <Field label="مسیر llama-server.exe">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={provider.localServerPath || ''}
+                            onChange={(e) => handleUpdate(provider.id, { localServerPath: e.target.value })}
+                            placeholder="مسیر فایل llama-server.exe"
+                            dir="ltr"
+                            className="input-field"
+                          />
+                          <button type="button" onClick={() => chooseAiFile('server')} className="shrink-0 rounded-lg border border-white/15 px-3 text-xs text-white hover:bg-white/10">انتخاب</button>
+                        </div>
                       </Field>
+                      <Field label="مسیر فایل مدل GGUF">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={provider.localModelPath || ''}
+                            onChange={(e) => handleUpdate(provider.id, { localModelPath: e.target.value })}
+                            placeholder="مسیر فایل Qwen با پسوند gguf"
+                            dir="ltr"
+                            className="input-field"
+                          />
+                          <button type="button" onClick={() => chooseAiFile('model')} className="shrink-0 rounded-lg border border-white/15 px-3 text-xs text-white hover:bg-white/10">انتخاب</button>
+                        </div>
+                      </Field>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button type="button" onClick={() => handleLocalAi(true)} disabled={localAiBusy || !provider.localServerPath || !provider.localModelPath} className="rounded-lg bg-gold/15 px-3 py-2 text-xs font-semibold text-gold-bright disabled:opacity-40">اجرای مدل</button>
+                        <button type="button" onClick={() => handleLocalAi(false)} disabled={localAiBusy} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white disabled:opacity-40">توقف مدل</button>
+                        {localAiBusy && <Loader2 size={14} className="animate-spin text-gold-bright" />}
+                      </div>
+                      {localAiMessage && <p className="text-xs text-text-secondary">{localAiMessage}</p>}
                     </>
                   )}
 
