@@ -49,10 +49,8 @@ export default function MetadataSourcesPanel() {
     if (idx < 0) return;
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= sorted.length) return;
-    const current = sorted[idx];
-    const target = sorted[swapIdx];
-    await service.setProviderPriority(id, target.priority);
-    await service.setProviderPriority(target.id, current.priority);
+    [sorted[idx], sorted[swapIdx]] = [sorted[swapIdx], sorted[idx]];
+    await service.setProviderOrder(sorted.map((provider) => provider.id));
     setProviders(service.getProviders());
   }
 
