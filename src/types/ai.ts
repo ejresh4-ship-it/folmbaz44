@@ -41,6 +41,7 @@ export interface AIChatRequest {
   userPrompt: string;
   maxTokens?: number;
   temperature?: number;
+  signal?: AbortSignal;
 }
 
 /** A chat completion response. */
