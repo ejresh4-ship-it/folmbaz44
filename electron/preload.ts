@@ -14,6 +14,13 @@ const scanProgressChannels = new Map<string, (scanned: number, currentPath: stri
 contextBridge.exposeInMainWorld('filmBazDesktop', {
   isDesktop: true,
 
+  // --- Local offline AI ---
+  browseForAiServer: (): Promise<string | null> => ipcRenderer.invoke('ai:browseServer'),
+  browseForAiModel: (): Promise<string | null> => ipcRenderer.invoke('ai:browseModel'),
+  startLocalAi: (serverPath: string, modelPath: string, port: number): Promise<{ success: boolean; message: string }> =>
+    ipcRenderer.invoke('ai:startLocal', serverPath, modelPath, port),
+  stopLocalAi: (): Promise<void> => ipcRenderer.invoke('ai:stopLocal'),
+
   // --- Artwork download ---
   downloadImage: (url: string): Promise<string | null> => ipcRenderer.invoke('images:download', url),
 
