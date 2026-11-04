@@ -18,6 +18,7 @@ import {
   Globe,
   Check,
   Edit3,
+  MoreVertical,
 } from 'lucide-react';
 import type { LibraryFolder, MediaItem, ScanProgress, ScanSummary } from '@/types/media-library';
 import type { MovieMetadata } from '@/types/metadata';
@@ -58,6 +59,7 @@ export default function LibraryView({ onBack, onOrganize, onViewLog, onReviewMet
   const [lookupItem, setLookupItem] = useState<MediaItem | null>(null);
   const [metadataCache, setMetadataCache] = useState<Record<string, MovieMetadata>>({});
   const [showBatchRename, setShowBatchRename] = useState(false);
+  const [managementMenuItemId, setManagementMenuItemId] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
     await service.load();
@@ -151,6 +153,20 @@ export default function LibraryView({ onBack, onOrganize, onViewLog, onReviewMet
 
   const handleCancelScan = (folderId: string) => {
     service.cancelScan(folderId);
+  };
+
+  const handleRemoveItem = async (item: MediaItem) => {
+    const title = item.titleGuess || item.fileName;
+    if (!window.confirm(`«${title}» فقط از فهرست کتابخانه حذف شود؟ فایل اصلی از روی دیسک پاک نمی‌شود.`)) return;
+    try {
+      await service.removeItem(item.id);
+      await getMetadataService().clearMetadataForItem(item.id);
+      await loadAll();
+      setManagementMenuItemId(null);
+      notifyLibraryUpdated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'حذف مورد از کتابخانه ناموفق بود');
+    }
   };
 
   const handleLookupMatched = (metadata: MovieMetadata) => {
@@ -594,6 +610,41 @@ export default function LibraryView({ onBack, onOrganize, onViewLog, onReviewMet
                               جستجوی اطلاعات
                             </button>
                           )}
+                          <div className="relative">
+                            <button
+                              onClick={() => setManagementMenuItemId((current) => current === item.id ? null : item.id)}
+                              className="rounded p-1 text-text-muted hover:bg-white/10 hover:text-white"
+                              title="مدیریت این عنوان"
+                              aria-label={`مدیریت ${item.titleGuess || item.fileName}`}
+                              aria-expanded={managementMenuItemId === item.id}
+                            >
+                              <MoreVertical size={16} />
+                            </button>
+                            {managementMenuItemId === item.id && (
+                              <div className="absolute left-0 top-full z-30 mt-1 min-w-44 rounded-lg border border-white/10 bg-surface-2 p-1.5 shadow-xl">
+                                <button
+                                  onClick={() => { setLookupItem(item); setManagementMenuItemId(null); }}
+                                  className="block w-full rounded px-3 py-2 text-right text-xs text-text-secondary hover:bg-white/10 hover:text-white"
+                                >
+                                  تغییر منبع مرجع اطلاعات
+                                </button>
+                                {metadataCache[item.id] && (
+                                  <button
+                                    onClick={() => { onReviewMetadata(item, metadataCache[item.id]); setManagementMenuItemId(null); }}
+                                    className="block w-full rounded px-3 py-2 text-right text-xs text-text-secondary hover:bg-white/10 hover:text-white"
+                                  >
+                                    ویرایش مشخصات
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => void handleRemoveItem(item)}
+                                  className="block w-full rounded px-3 py-2 text-right text-xs text-red-400 hover:bg-red-500/10"
+                                >
+                                  حذف از کتابخانه
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>
