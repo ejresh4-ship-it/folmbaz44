@@ -39,6 +39,7 @@ export default function OrganizeView({ folderId, onBack, onViewLog }: OrganizeVi
   const [metadataBusy, setMetadataBusy] = useState(false);
   const [metadataProgress, setMetadataProgress] = useState({ completed: 0, total: 0, current: '', succeeded: 0, failed: 0 });
   const [metadataFailures, setMetadataFailures] = useState<Array<{ fileName: string; reason: string }>>([]);
+  const [metadataSkipped, setMetadataSkipped] = useState(0);
   const [finalizeBusy, setFinalizeBusy] = useState(false);
   const [finalizeProgress, setFinalizeProgress] = useState({
     completed: 0, total: 0, namesSynced: 0, nameFailures: 0, offlineSaved: 0, offlineFailures: 0,
@@ -100,11 +101,34 @@ export default function OrganizeView({ folderId, onBack, onViewLog }: OrganizeVi
     if (metadataBusy) return;
     const items = service.getItemsForFolder(folderId);
     if (items.length === 0) { setError('فایلی برای تکمیل اطلاعات در این پوشه پیدا نشد.'); return; }
-    setMetadataBusy(true); setMetadataFailures([]);
-    setMetadataProgress({ completed: 0, total: items.length, current: '', succeeded: 0, failed: 0 });
-    try { const result = await getMetadataService().enrichItems(items, setMetadataProgress); setMetadataFailures(result.failed); notifyLibraryUpdated(); }
-    catch (e) { setError(e instanceof Error ? e.message : 'تکمیل اطلاعات ناموفق بود'); }
-    finally { setMetadataBusy(false); }
+
+    setMetadataBusy(true);
+    setMetadataFailures([]);
+    setMetadataSkipped(0);
+    try {
+      const metadataService = getMetadataService();
+      await metadataService.load();
+
+      // Items with cached metadata have already completed successfully.
+      // Items without cached metadata (including previous failures) are retried.
+      const pendingItems = items.filter((item) => !metadataService.getMetadataForItem(item.id));
+      const skipped = items.length - pendingItems.length;
+      setMetadataSkipped(skipped);
+
+      if (pendingItems.length === 0) {
+        setMetadataProgress({ completed: 0, total: 0, current: '', succeeded: 0, failed: 0 });
+        return;
+      }
+
+      setMetadataProgress({ completed: 0, total: pendingItems.length, current: '', succeeded: 0, failed: 0 });
+      const result = await metadataService.enrichItems(pendingItems, setMetadataProgress);
+      setMetadataFailures(result.failed);
+      notifyLibraryUpdated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'تکمیل اطلاعات ناموفق بود');
+    } finally {
+      setMetadataBusy(false);
+    }
   }
   async function execute() {
     if (!proposal) return;
@@ -295,6 +319,7 @@ export default function OrganizeView({ folderId, onBack, onViewLog }: OrganizeVi
           </button>
           <span className="text-xs text-text-muted">پوستر، داستان، بازیگران، کارگردان و ژانر از منابع فعال</span>
         </div>
+        {metadataSkipped > 0 && metadataProgress.total === 0 && !metadataBusy && <p className="mt-3 text-xs text-green-400">همه {toPersianDigits(metadataSkipped)} فیلم قبلاً اطلاعات موفق داشته‌اند؛ دوباره پردازش نشدند.</p>}
         {metadataProgress.total > 0 && (
           <div className="mt-3 rounded-lg border border-white/10 bg-surface-2 p-3">
             <div className="mb-2 flex flex-wrap justify-between gap-2 text-xs text-text-secondary">
@@ -303,7 +328,7 @@ export default function OrganizeView({ folderId, onBack, onViewLog }: OrganizeVi
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-gold transition-all" style={{ width: (metadataProgress.completed / metadataProgress.total * 100) + '%' }} /></div>
             {metadataProgress.current && <p className="mt-2 truncate text-xs text-text-muted" dir="ltr">{metadataProgress.current}</p>}
-            <p className="mt-1 text-xs text-text-muted">{toPersianDigits(metadataProgress.succeeded)} موفق · {toPersianDigits(metadataProgress.failed)} ناموفق</p>
+            <p className="mt-1 text-xs text-text-muted">{toPersianDigits(metadataProgress.succeeded)} موفق · {toPersianDigits(metadataProgress.failed)} ناموفق · {toPersianDigits(metadataSkipped)} قبلاً تکمیل‌شده و رد شد</p>
             {metadataFailures.length > 0 && <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">{metadataFailures.map((failure, index) => <p key={index} className="text-xs text-amber-300">{failure.fileName}: {failure.reason}</p>)}</div>}
           </div>
         )}
