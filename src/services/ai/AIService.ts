@@ -97,11 +97,6 @@ class AIService {
     }
     this.usage = usage ?? this.usage;
     this.loaded = true;
-    const localProvider = this.configs.find((provider) => provider.id === 'llama-cpp');
-    if (localProvider?.enabled && localProvider.localServerPath && localProvider.localModelPath
-      && typeof window !== 'undefined' && window.filmBazDesktop?.isDesktop) {
-      void this.startLocalProvider().catch(() => undefined);
-    }
   }
 
   private async persistConfigs(): Promise<void> {
@@ -385,7 +380,7 @@ class AIService {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
-        signal: controller.signal,
+        signal: request.signal ? AbortSignal.any([controller.signal, request.signal]) : controller.signal,
         });
       } finally {
         clearTimeout(timeout);

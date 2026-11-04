@@ -1,31 +1,39 @@
-import { useMemo, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Bot, Send, Sparkles, Film, Search, Languages, WandSparkles, Loader2, User } from 'lucide-react';
 import { getAIService } from '@/services/ai/AIService';
 import type { Movie } from '@/types/movie';
 
 type Message = { role: 'user' | 'assistant'; content: string };
 
-export default function AIAssistantView({ movies }: { movies: Movie[] }) {
+export default function AIAssistantView(_props: { movies: Movie[] }) {
   const [messages, setMessages] = useState<Message[]>([{ role: 'assistant', content: 'سلام! من دستیار هوشمند فیلم‌باز هستم. می‌توانم دربارهٔ فیلم‌ها و سریال‌های کتابخانه‌ات راهنمایی کنم، آثار مشابه پیشنهاد بدهم یا متن زیرنویس را ترجمه کنم.' }]);
   const [input, setInput] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [busy, setBusy] = useState(false);
-  const libraryContext = useMemo(() => movies.slice(0, 100).map((m) => `${m.title} (${m.englishTitle}, ${m.year}) | ژانر: ${m.genres.join('، ')} | خلاصه: ${m.synopsis}`).join('\n'), [movies]);
+  const requestController = useRef<AbortController | null>(null);
 
   async function ask(text: string, systemPrompt?: string) {
     const prompt = text.trim();
     if (!prompt || busy) return;
     setMessages((old) => [...old, { role: 'user', content: prompt }]);
+    const estimatedTokens = Math.ceil(prompt.length / 2.5);
+    if (estimatedTokens > 3000 && !window.confirm(`حجم تقریبی درخواست: ${estimatedTokens.toLocaleString('fa-IR')} توکن. فقط متن همین درخواست ارسال می‌شود. ادامه می‌دهی؟`)) return;
     setInput(''); setBusy(true);
+    const controller = new AbortController();
+    requestController.current = controller;
     try {
       const response = await getAIService().chat({
-        systemPrompt: systemPrompt || `تو دستیار فارسی‌زبان برنامه FILM BAZ هستی. پاسخ‌ها دقیق، دوستانه و فارسی باشند. اگر اطلاعات کافی نداری صادقانه بگو. از این کتابخانه برای پیشنهادها استفاده کن و فیلمی را که در فهرست نیست به‌عنوان موجود در کتابخانه معرفی نکن:\n${libraryContext || 'کتابخانه هنوز خالی است.'}`,
-        userPrompt: prompt, maxTokens: 1200, temperature: 0.6,
+        systemPrompt: systemPrompt || 'تو دستیار فارسی‌زبان برنامه FILM BAZ هستی. پاسخ‌ها دقیق، دوستانه و فارسی باشند. اگر اطلاعات کافی نداری صادقانه بگو.',
+        userPrompt: prompt, maxTokens: 1200, temperature: 0.6, signal: controller.signal,
       });
       setMessages((old) => [...old, { role: 'assistant', content: response.content || 'پاسخی دریافت نشد.' }]);
     } catch (error) {
       setMessages((old) => [...old, { role: 'assistant', content: `خطا در دریافت پاسخ: ${error instanceof Error ? error.message : 'اتصال ناموفق بود'}. تنظیمات هوش مصنوعی و فعال بودن ارائه‌دهنده را بررسی کن.` }]);
-    } finally { setBusy(false); }
+    } finally { requestController.current = null; setBusy(false); }
+  }
+
+  function stopRequest() {
+    requestController.current?.abort();
   }
 
   return <section className="mx-auto max-w-5xl px-4 py-8" dir="rtl">
@@ -39,7 +47,7 @@ export default function AIAssistantView({ movies }: { movies: Movie[] }) {
     <div className="rounded-2xl border border-white/10 bg-surface-2 p-4 sm:p-6">
       <div className="mb-4 max-h-[430px] min-h-64 space-y-4 overflow-y-auto" aria-live="polite">
         {messages.map((m, i) => <div key={i} className={`flex gap-2 ${m.role === 'user' ? 'justify-start' : 'justify-start'}`}><span className="mt-1 text-gold-bright">{m.role === 'user' ? <User size={18}/> : <Bot size={18}/>}</span><div className={`max-w-[90%] whitespace-pre-wrap rounded-xl px-4 py-3 text-sm leading-7 ${m.role === 'user' ? 'bg-white/10 text-white' : 'bg-black/20 text-text-secondary'}`}>{m.content}</div></div>)}
-        {busy && <div className="flex items-center gap-2 text-sm text-text-muted"><Loader2 className="animate-spin" size={16}/> در حال دریافت پاسخ…</div>}
+        {busy && <div className="flex items-center gap-3 text-sm text-text-muted"><Loader2 className="animate-spin" size={16}/> در حال دریافت پاسخ… <button type="button" onClick={stopRequest} className="rounded-lg border border-red-400/30 px-3 py-1 text-red-300">توقف پردازش</button></div>}
       </div>
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void ask(input); }}><input value={input} onChange={(e) => setInput(e.target.value)} placeholder="مثلاً یک فیلم معمایی و کم‌خشونت پیشنهاد بده…" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-base px-4 py-3 text-sm text-white outline-none focus:border-gold/50"/><button disabled={busy || !input.trim()} className="btn-primary inline-flex items-center gap-2 disabled:opacity-50"><Send size={16}/> ارسال</button></form>
     </div>
