@@ -21,6 +21,7 @@ export interface AIProviderConfig {
   model?: string;
   // llama.cpp local
   localModelPath?: string;
+  localServerPath?: string;
   localPort?: number;
   // priority for fallback
   priority: number;
