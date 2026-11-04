@@ -585,7 +585,7 @@ class LibraryService {
     for (const vEntry of videoEntries) {
       const previous = previousByPath.get(normalizePath(vEntry.path));
       const unchanged = previous && previous.fileSize === vEntry.size && previous.lastModified === vEntry.lastModified;
-      let parsed = parseFileName(vEntry.name);
+      const parsed = parseFileName(vEntry.name);
 
       const parentDir = fs.parentPath(vEntry.path);
 
