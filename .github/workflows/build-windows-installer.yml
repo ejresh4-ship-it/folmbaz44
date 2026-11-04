@@ -53,3 +53,5 @@ jobs:
           name: FilmBaz-Setup-windows
           path: release/FilmBaz-Setup-*.exe
           if-no-files-found: error
+
+# Trigger a fresh Windows installer build after enabling this branch.
