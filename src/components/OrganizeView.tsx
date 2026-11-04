@@ -310,7 +310,7 @@ export default function OrganizeView({ folderId, onBack, onViewLog }: OrganizeVi
           </button>
           <span className="text-xs text-text-muted">پوستر، داستان، بازیگران، کارگردان و ژانر از منابع فعال</span>
         </div>
-        {metadataProgress.total > 0 && (
+        {(metadataProgress.total > 0 || metadataSkipped > 0) && (
           <div className="mt-3 rounded-lg border border-white/10 bg-surface-2 p-3">
             <div className="mb-2 flex flex-wrap justify-between gap-2 text-xs text-text-secondary">
               <span>پیشرفت تکمیل اطلاعات: {toPersianDigits(metadataProgress.completed)} از {toPersianDigits(metadataProgress.total)}</span>
