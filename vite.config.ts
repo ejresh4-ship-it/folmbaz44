@@ -2,10 +2,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
-// https://vitejs.dev/config/
+// GitHub Pages project URL: https://ejresh4-ship-it.github.io/folmbaz44/
 export default defineConfig({
-  // GitHub Pages serves this project from /FILM-BAZ-NEW/; desktop builds keep relative asset paths.
-  base: process.env.GITHUB_PAGES === 'true' ? '/FILM-BAZ-NEW/' : './',
+  base: process.env.GITHUB_PAGES === 'true' ? '/folmbaz44/' : './',
   plugins: [react()],
   clearScreen: false,
   server: {
