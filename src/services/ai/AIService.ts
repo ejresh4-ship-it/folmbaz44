@@ -98,7 +98,7 @@ class AIService {
     this.loaded = true;
     const localProvider = this.configs.find((provider) => provider.id === 'llama-cpp');
     if (localProvider?.enabled && localProvider.localServerPath && localProvider.localModelPath
-      && window.filmBazDesktop?.isDesktop) {
+      && typeof window !== 'undefined' && window.filmBazDesktop?.isDesktop) {
       void this.startLocalProvider();
     }
   }
@@ -114,7 +114,7 @@ class AIService {
   private async startLocalProvider(): Promise<{ success: boolean; message: string }> {
     const config = this.configs.find((provider) => provider.id === 'llama-cpp');
     if (!config) return { success: false, message: 'تنظیمات مدل آفلاین پیدا نشد.' };
-    if (!window.filmBazDesktop?.isDesktop) {
+    if (typeof window === 'undefined' || !window.filmBazDesktop?.isDesktop) {
       return { success: false, message: 'اجرای خودکار فقط در نسخه ویندوز برنامه در دسترس است.' };
     }
     if (!config.localServerPath || !config.localModelPath) {
@@ -133,7 +133,7 @@ class AIService {
   }
 
   async stopLocalModel(): Promise<void> {
-    if (window.filmBazDesktop?.isDesktop) {
+    if (typeof window !== 'undefined' && window.filmBazDesktop?.isDesktop) {
       await window.filmBazDesktop.stopLocalAi();
     }
   }
