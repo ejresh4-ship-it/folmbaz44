@@ -88,20 +88,26 @@ app.on('window-all-closed', () => {
 
 // --- IPC: Managed local offline AI ---
 ipcMain.handle('ai:browseServer', async (): Promise<string | null> => {
-  const result = await dialog.showOpenDialog(mainWindow ?? undefined, {
+  const options = {
     title: 'انتخاب llama-server.exe',
     filters: [{ name: 'برنامه اجرایی', extensions: ['exe'] }],
-    properties: ['openFile'],
-  });
+    properties: ['openFile'] as const,
+  };
+  const result = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
   return result.canceled ? null : (result.filePaths[0] ?? null);
 });
 
 ipcMain.handle('ai:browseModel', async (): Promise<string | null> => {
-  const result = await dialog.showOpenDialog(mainWindow ?? undefined, {
+  const options = {
     title: 'انتخاب فایل مدل GGUF',
     filters: [{ name: 'مدل GGUF', extensions: ['gguf'] }],
-    properties: ['openFile'],
-  });
+    properties: ['openFile'] as const,
+  };
+  const result = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
   return result.canceled ? null : (result.filePaths[0] ?? null);
 });
 
