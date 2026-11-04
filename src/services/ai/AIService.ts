@@ -218,7 +218,7 @@ class AIService {
     const config = this.configs.find((provider) => provider.id === 'llama-cpp' && provider.enabled);
     if (!config || !this.hasCredentials(config)) return null;
 
-    if (window.filmBazDesktop?.isDesktop) {
+    if (typeof window !== 'undefined' && window.filmBazDesktop?.isDesktop) {
       const started = await this.startLocalProvider();
       if (!started.success) return null;
     }
@@ -293,7 +293,7 @@ class AIService {
       return { success: false, message: 'اطلاعات اتصال ناقص است؛ آدرس و کلید API را بررسی کنید.' };
     }
 
-    if (config.type === 'llama-cpp' && window.filmBazDesktop?.isDesktop) {
+    if (config.type === 'llama-cpp' && typeof window !== 'undefined' && window.filmBazDesktop?.isDesktop) {
       const started = await this.startLocalProvider();
       if (!started.success) return { success: false, message: started.message };
     }
@@ -363,7 +363,7 @@ class AIService {
       throw new Error('ارائه‌دهنده فعال اطلاعات ناقص دارد. کلید و آدرس API را بررسی کنید.');
     }
 
-    if (config.type === 'llama-cpp' && window.filmBazDesktop?.isDesktop) {
+    if (config.type === 'llama-cpp' && typeof window !== 'undefined' && window.filmBazDesktop?.isDesktop) {
       const started = await this.startLocalProvider();
       if (!started.success) throw new Error(started.message);
     }
