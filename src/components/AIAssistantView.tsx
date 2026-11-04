@@ -5,7 +5,7 @@ import type { Movie } from '@/types/movie';
 
 type Message = { role: 'user' | 'assistant'; content: string };
 
-export default function AIAssistantView({ movies }: { movies: Movie[] }) {
+export default function AIAssistantView(_props: { movies: Movie[] }) {
   const [messages, setMessages] = useState<Message[]>([{ role: 'assistant', content: 'سلام! من دستیار هوشمند فیلم‌باز هستم. می‌توانم دربارهٔ فیلم‌ها و سریال‌های کتابخانه‌ات راهنمایی کنم، آثار مشابه پیشنهاد بدهم یا متن زیرنویس را ترجمه کنم.' }]);
   const [input, setInput] = useState('');
   const [subtitle, setSubtitle] = useState('');
