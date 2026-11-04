@@ -96,6 +96,11 @@ class AIService {
     }
     this.usage = usage ?? this.usage;
     this.loaded = true;
+    const localProvider = this.configs.find((provider) => provider.id === 'llama-cpp');
+    if (localProvider?.enabled && localProvider.localServerPath && localProvider.localModelPath
+      && window.filmBazDesktop?.isDesktop) {
+      void this.startLocalProvider();
+    }
   }
 
   private async persistConfigs(): Promise<void> {
@@ -104,6 +109,33 @@ class AIService {
 
   private async persistUsage(): Promise<void> {
     await idbSet(AI_USAGE_KEY, this.usage);
+  }
+
+  private async startLocalProvider(): Promise<{ success: boolean; message: string }> {
+    const config = this.configs.find((provider) => provider.id === 'llama-cpp');
+    if (!config) return { success: false, message: 'تنظیمات مدل آفلاین پیدا نشد.' };
+    if (!window.filmBazDesktop?.isDesktop) {
+      return { success: false, message: 'اجرای خودکار فقط در نسخه ویندوز برنامه در دسترس است.' };
+    }
+    if (!config.localServerPath || !config.localModelPath) {
+      return { success: false, message: 'ابتدا مسیر llama-server.exe و فایل مدل GGUF را انتخاب کن.' };
+    }
+    return window.filmBazDesktop.startLocalAi(
+      config.localServerPath,
+      config.localModelPath,
+      config.localPort || 1234,
+    );
+  }
+
+  async startLocalModel(): Promise<{ success: boolean; message: string }> {
+    await this.load();
+    return this.startLocalProvider();
+  }
+
+  async stopLocalModel(): Promise<void> {
+    if (window.filmBazDesktop?.isDesktop) {
+      await window.filmBazDesktop.stopLocalAi();
+    }
   }
 
   getProviders(): AIProviderConfig[] {
@@ -168,6 +200,10 @@ class AIService {
     const config = this.configs.find((provider) => provider.id === 'llama-cpp' && provider.enabled);
     if (!config || !this.hasCredentials(config)) return null;
 
+    if (window.filmBazDesktop?.isDesktop) {
+      const started = await this.startLocalProvider();
+      if (!started.success) return null;
+    }
     const port = config.localPort || 1234;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
@@ -239,6 +275,11 @@ class AIService {
       return { success: false, message: 'اطلاعات اتصال ناقص است؛ آدرس و کلید API را بررسی کنید.' };
     }
 
+    if (config.type === 'llama-cpp' && window.filmBazDesktop?.isDesktop) {
+      const started = await this.startLocalProvider();
+      if (!started.success) return { success: false, message: started.message };
+    }
+
     const start = performance.now();
     try {
       const url = this.buildChatUrl(config);
@@ -302,6 +343,11 @@ class AIService {
     }
     if (!this.hasCredentials(config)) {
       throw new Error('ارائه‌دهنده فعال اطلاعات ناقص دارد. کلید و آدرس API را بررسی کنید.');
+    }
+
+    if (config.type === 'llama-cpp' && window.filmBazDesktop?.isDesktop) {
+      const started = await this.startLocalProvider();
+      if (!started.success) throw new Error(started.message);
     }
 
     const start = performance.now();
@@ -368,7 +414,7 @@ class AIService {
       return `${base}/chat/completions`;
     }
     // llama.cpp server (OpenAI-compatible endpoint)
-    const port = config.localPort || 8080;
+    const port = config.localPort || 1234;
     return `http://127.0.0.1:${port}/v1/chat/completions`;
   }
 
