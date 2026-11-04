@@ -380,7 +380,7 @@ class AIService {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
-        signal: controller.signal,
+        signal: request.signal ? AbortSignal.any([controller.signal, request.signal]) : controller.signal,
         });
       } finally {
         clearTimeout(timeout);
