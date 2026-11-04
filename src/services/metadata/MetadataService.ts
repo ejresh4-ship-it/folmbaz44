@@ -178,6 +178,17 @@ class MetadataService {
     }
   }
 
+  /** Persist a complete provider order in one write, avoiding partial swaps. */
+  async setProviderOrder(providerIds: string[]): Promise<void> {
+    await this.load();
+    const positions = new Map(providerIds.map((id, index) => [id, index + 1]));
+    this.configs = this.configs.map((config) => ({
+      ...config,
+      priority: positions.get(config.id) ?? config.priority,
+    }));
+    await this.persistConfigs();
+  }
+
   getLookupMode(): LookupMode {
     return this.lookupMode;
   }
@@ -215,15 +226,17 @@ class MetadataService {
       throw new Error('هیچ ارائه‌دهنده فعالی پیکربندی نشده است. به تنظیمات > منابع اطلاعات فیلم بروید.');
     }
 
-    const results = await Promise.allSettled(
-      providers.map(({ provider, config }) =>
-        provider.search(query, item.yearGuess, mediaType, config, signal),
-      ),
-    );
-
+    // Query providers sequentially in configured priority order. This makes
+    // the arrows meaningful while still collecting results from every source.
     const all: MatchCandidate[] = [];
-    for (const r of results) {
-      if (r.status === 'fulfilled') all.push(...r.value);
+    for (const { provider, config } of providers) {
+      if (signal?.aborted) throw new DOMException('لغو شد', 'AbortError');
+      try {
+        const candidates = await provider.search(query, item.yearGuess, mediaType, config, signal);
+        all.push(...candidates.sort((a, b) => b.matchScore - a.matchScore));
+      } catch {
+        // A failing source must not block lower-priority fallback sources.
+      }
     }
 
     // Deduplicate by (providerName, externalId)
@@ -235,7 +248,14 @@ class MetadataService {
       return true;
     });
 
-    return deduped.sort((a, b) => b.matchScore - a.matchScore);
+    // Preserve provider priority across sources; rank only within each source.
+    const providerOrder = new Map(providers.map(({ config }, index) => [config.id, index]));
+    return deduped.sort((a, b) => {
+      const priorityDifference =
+        (providerOrder.get(a.providerId) ?? Number.MAX_SAFE_INTEGER) -
+        (providerOrder.get(b.providerId) ?? Number.MAX_SAFE_INTEGER);
+      return priorityDifference || b.matchScore - a.matchScore;
+    });
   }
 
   /** Fetch full metadata for a chosen candidate and cache it. */
@@ -314,8 +334,7 @@ class MetadataService {
     const existing = this.getMetadataForItem(item.id);
     if (existing?.manuallyCorrected) return existing;
     const candidates = await this.searchCandidates(item, signal);
-    const ranked = candidates.filter((candidate) => candidate.matchScore >= 65)
-      .sort((a, b) => b.matchScore - a.matchScore);
+    const ranked = candidates.filter((candidate) => candidate.matchScore >= 65);
     const providerSeen = new Set<string>();
     const uniqueRanked = ranked.filter((candidate) => {
       const key = candidate.providerName.toLowerCase();
