@@ -19,7 +19,6 @@ import type { DirEntry } from '@/services/filesystem';
 import { getFilesystemService } from '@/services/filesystemFactory';
 import { idbGet, idbSet } from '@/services/idbStore';
 import { getMetadataService } from '@/services/metadata/MetadataService';
-import { getAIService } from '@/services/ai/AIService';
 import {
   isVideoFile,
   isSubtitleFile,
@@ -588,23 +587,6 @@ class LibraryService {
       const unchanged = previous && previous.fileSize === vEntry.size && previous.lastModified === vEntry.lastModified;
       let parsed = parseFileName(vEntry.name);
 
-      // Ask local Qwen only when the built-in parser cannot identify the file.
-      // Unchanged files are not sent again on incremental scans.
-      if (!parsed.confident && !unchanged) {
-        const aiResult = await getAIService().identifyFilename(vEntry.name);
-        if (aiResult) {
-          parsed = {
-            ...parsed,
-            mediaType: aiResult.mediaType,
-            titleGuess: aiResult.title,
-            yearGuess: aiResult.year,
-            seasonGuess: aiResult.season,
-            episodeGuess: aiResult.episode,
-            language: aiResult.language,
-            confident: true,
-          };
-        }
-      }
       const parentDir = fs.parentPath(vEntry.path);
 
       // Find matching subtitles in the same folder
