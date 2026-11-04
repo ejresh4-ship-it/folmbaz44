@@ -44,6 +44,12 @@ export interface PlaybackPreferences {
 export interface DesktopBridge {
   readonly isDesktop: true;
 
+  // --- Local offline AI ---
+  browseForAiServer(): Promise<string | null>;
+  browseForAiModel(): Promise<string | null>;
+  startLocalAi(serverPath: string, modelPath: string, port: number): Promise<{ success: boolean; message: string }>;
+  stopLocalAi(): Promise<void>;
+
   // --- Artwork download ---
   /** Fetch a remote artwork image in Electron's main process, bypassing renderer CORS. */
   downloadImage(url: string): Promise<string | null>;
