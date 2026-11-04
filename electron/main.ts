@@ -91,7 +91,7 @@ ipcMain.handle('ai:browseServer', async (): Promise<string | null> => {
   const options = {
     title: 'انتخاب llama-server.exe',
     filters: [{ name: 'برنامه اجرایی', extensions: ['exe'] }],
-    properties: ['openFile'] as const,
+    properties: ['openFile'] as Array<'openFile'>,
   };
   const result = mainWindow && !mainWindow.isDestroyed()
     ? await dialog.showOpenDialog(mainWindow, options)
@@ -103,7 +103,7 @@ ipcMain.handle('ai:browseModel', async (): Promise<string | null> => {
   const options = {
     title: 'انتخاب فایل مدل GGUF',
     filters: [{ name: 'مدل GGUF', extensions: ['gguf'] }],
-    properties: ['openFile'] as const,
+    properties: ['openFile'] as Array<'openFile'>,
   };
   const result = mainWindow && !mainWindow.isDestroyed()
     ? await dialog.showOpenDialog(mainWindow, options)
