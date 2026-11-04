@@ -20,6 +20,7 @@ import { getLibraryService } from '@/services/LibraryService';
 import { getMetadataService } from '@/services/metadata/MetadataService';
 import { subscribeToLibraryUpdates } from '@/services/libraryEvents';
 import { getPlaybackService, type PlayOutcome } from '@/services/playback/PlaybackService';
+import { getAIService } from '@/services/ai/AIService';
 import type { Movie } from '@/types/movie';
 import type { MediaItem } from '@/types/media-library';
 import type { MovieMetadata } from '@/types/metadata';
@@ -43,6 +44,10 @@ export default function App() {
   const [enrichmentLoadingIds, setEnrichmentLoadingIds] = useState<Set<string>>(new Set());
   const enrichmentInFlight = useRef(new Set<string>());
   const enrichmentAttempted = useRef(new Set<string>());
+
+  useEffect(() => {
+    void getAIService().load().catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('film-baz:theme');
