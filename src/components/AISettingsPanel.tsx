@@ -29,6 +29,8 @@ export default function AISettingsPanel() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, AIConnectionTestResult>>({});
+  const [localAiMessage, setLocalAiMessage] = useState('');
+  const [localAiBusy, setLocalAiBusy] = useState(false);
 
   useEffect(() => {
     service.load().then(() => {
@@ -45,6 +47,27 @@ export default function AISettingsPanel() {
   async function handleToggle(id: string) {
     const provider = providers.find((p) => p.id === id);
     if (!provider) return;
+
+    if (provider.type === 'llama-cpp' && window.filmBazDesktop?.isDesktop) {
+      setLocalAiBusy(true);
+      try {
+        if (!provider.enabled) {
+          const started = await service.startLocalModel();
+          setLocalAiMessage(started.message);
+          if (!started.success) return;
+          await service.updateProvider(id, { enabled: true });
+        } else {
+          await service.updateProvider(id, { enabled: false });
+          await service.stopLocalModel();
+          setLocalAiMessage('ارائه‌دهنده آفلاین غیرفعال شد و سرور متوقف شد.');
+        }
+        refresh();
+      } finally {
+        setLocalAiBusy(false);
+      }
+      return;
+    }
+
     await service.updateProvider(id, { enabled: !provider.enabled });
     refresh();
   }
@@ -70,6 +93,43 @@ export default function AISettingsPanel() {
       await service.updateProvider(p.id, { priority: p.priority });
     }
     refresh();
+  }
+
+  async function chooseAiFile(kind: 'server' | 'model') {
+    if (!window.filmBazDesktop?.isDesktop) {
+      setLocalAiMessage('انتخاب فایل و اجرای خودکار در نسخه ویندوز در دسترس است.');
+      return;
+    }
+    const selected = kind === 'server'
+      ? await window.filmBazDesktop.browseForAiServer()
+      : await window.filmBazDesktop.browseForAiModel();
+    if (selected) {
+      await handleUpdate('llama-cpp', kind === 'server'
+        ? { localServerPath: selected }
+        : { localModelPath: selected });
+    }
+  }
+
+  async function handleLocalAi(start: boolean) {
+    setLocalAiBusy(true);
+    setLocalAiMessage(start ? 'در حال اجرای مدل؛ بارگذاری ممکن است کمی طول بکشد…' : 'در حال توقف مدل…');
+    try {
+      if (start) {
+        const result = await service.startLocalModel();
+        setLocalAiMessage(result.message);
+        if (result.success) {
+          await service.updateProvider('llama-cpp', { enabled: true });
+          refresh();
+        }
+      } else {
+        await service.stopLocalModel();
+        setLocalAiMessage('سرور مدل متوقف شد.');
+      }
+    } catch (error) {
+      setLocalAiMessage(error instanceof Error ? error.message : 'عملیات ناموفق بود.');
+    } finally {
+      setLocalAiBusy(false);
+    }
   }
 
   async function handleTest(id: string) {
@@ -223,16 +283,8 @@ export default function AISettingsPanel() {
 
                   {provider.type === 'llama-cpp' && (
                     <>
-                      <div className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
-                        <Cpu size={15} className="mt-0.5 flex-shrink-0 text-blue-400" />
-                        <p className="text-xs leading-relaxed text-text-secondary">
-                          برای استفاده از مدل آفلاین، ابتدا <code className="rounded bg-white/10 px-1 text-gold-bright" dir="ltr">llama-server</code>
-                          {' '}را روی پورت مورد نظر اجرا کنید. مثال:
-                          <br />
-                          <code className="mt-1 block rounded bg-white/10 px-1.5 py-1 text-[10px] text-gold-bright" dir="ltr">
-                            E:\Ai\llama-server.exe -m E:\Ai\qwen2.5-3b-instruct-q2_k.gguf -c 2048 -t 2 -ngl 0 --host 127.0.0.1 --port 1234
-                          </code>
-                        </p>
+                      <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 text-xs leading-relaxed text-text-secondary">
+                        فایل سرور و مدل را یک‌بار انتخاب کن. نسخه ویندوز FILM BAZ آن‌ها را خودش اجرا می‌کند؛ در نسخه وب باید سرور را جداگانه اجرا کنی.
                       </div>
                       <Field label="پورت سرور محلی">
                         <input
@@ -243,16 +295,38 @@ export default function AISettingsPanel() {
                           className="input-field"
                         />
                       </Field>
-                      <Field label="مسیر فایل مدل (اختیاری)">
-                        <input
-                          type="text"
-                          value={provider.localModelPath || ''}
-                          onChange={(e) => handleUpdate(provider.id, { localModelPath: e.target.value })}
-                          placeholder="C:\Models\qwen2.5-7b-instruct.gguf"
-                          dir="ltr"
-                          className="input-field"
-                        />
+                      <Field label="مسیر llama-server.exe">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={provider.localServerPath || ''}
+                            onChange={(e) => handleUpdate(provider.id, { localServerPath: e.target.value })}
+                            placeholder="مسیر فایل llama-server.exe"
+                            dir="ltr"
+                            className="input-field"
+                          />
+                          <button type="button" onClick={() => chooseAiFile('server')} className="shrink-0 rounded-lg border border-white/15 px-3 text-xs text-white hover:bg-white/10">انتخاب</button>
+                        </div>
                       </Field>
+                      <Field label="مسیر فایل مدل GGUF">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={provider.localModelPath || ''}
+                            onChange={(e) => handleUpdate(provider.id, { localModelPath: e.target.value })}
+                            placeholder="مسیر فایل Qwen با پسوند gguf"
+                            dir="ltr"
+                            className="input-field"
+                          />
+                          <button type="button" onClick={() => chooseAiFile('model')} className="shrink-0 rounded-lg border border-white/15 px-3 text-xs text-white hover:bg-white/10">انتخاب</button>
+                        </div>
+                      </Field>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button type="button" onClick={() => handleLocalAi(true)} disabled={localAiBusy || !provider.localServerPath || !provider.localModelPath} className="rounded-lg bg-gold/15 px-3 py-2 text-xs font-semibold text-gold-bright disabled:opacity-40">اجرای مدل</button>
+                        <button type="button" onClick={() => handleLocalAi(false)} disabled={localAiBusy} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white disabled:opacity-40">توقف مدل</button>
+                        {localAiBusy && <Loader2 size={14} className="animate-spin text-gold-bright" />}
+                      </div>
+                      {localAiMessage && <p className="text-xs text-text-secondary">{localAiMessage}</p>}
                     </>
                   )}
 
