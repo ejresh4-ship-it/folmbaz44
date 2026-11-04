@@ -2,10 +2,18 @@ name: Build Windows Installer
 
 on:
   push:
-    branches: [main, master, feature/metadata-adapters-smart-bulk-organize]
-    tags: ['v*']
+    branches:
+      - main
+      - master
+      - archive/known-good-41409827776
+      - feature/metadata-adapters-smart-bulk-organize
+    tags:
+      - 'v*'
   pull_request:
-    branches: [main, master]
+    branches:
+      - main
+      - master
+      - archive/known-good-41409827776
   workflow_dispatch:
 
 jobs:
