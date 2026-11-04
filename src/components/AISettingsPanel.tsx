@@ -117,6 +117,10 @@ export default function AISettingsPanel() {
       if (start) {
         const result = await service.startLocalModel();
         setLocalAiMessage(result.message);
+        if (result.success) {
+          await service.updateProvider('llama-cpp', { enabled: true });
+          refresh();
+        }
       } else {
         await service.stopLocalModel();
         setLocalAiMessage('سرور مدل متوقف شد.');
