@@ -127,8 +127,9 @@ ipcMain.handle('ai:startLocal', async (
       fs.promises.stat(serverPath),
       fs.promises.stat(modelPath),
     ]);
-    if (!serverStat.isFile() || path.extname(serverPath).toLowerCase() !== '.exe') {
-      return { success: false, message: 'فایل انتخاب‌شده llama-server.exe معتبر نیست.' };
+    const serverName = path.basename(serverPath).toLowerCase();
+    if (!serverStat.isFile() || !/^llama-server(?:[._-][a-z0-9._-]+)?\.exe$/.test(serverName)) {
+      return { success: false, message: 'فقط فایل اجرایی llama-server.exe یا نسخه‌های بهینه‌شده آن قابل اجرا است.' };
     }
     if (!modelStat.isFile() || path.extname(modelPath).toLowerCase() !== '.gguf') {
       return { success: false, message: 'فایل انتخاب‌شده مدل GGUF معتبر نیست.' };
