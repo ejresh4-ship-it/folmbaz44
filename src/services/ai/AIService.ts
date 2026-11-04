@@ -61,6 +61,7 @@ class AIService {
     totalTokensUsed: 0,
   };
   private loaded = false;
+  private localStartPromise: Promise<{ success: boolean; message: string }> | null = null;
 
   async load(): Promise<void> {
     if (this.loaded) return;
@@ -99,7 +100,7 @@ class AIService {
     const localProvider = this.configs.find((provider) => provider.id === 'llama-cpp');
     if (localProvider?.enabled && localProvider.localServerPath && localProvider.localModelPath
       && typeof window !== 'undefined' && window.filmBazDesktop?.isDesktop) {
-      void this.startLocalProvider();
+      void this.startLocalProvider().catch(() => undefined);
     }
   }
 
@@ -112,12 +113,29 @@ class AIService {
   }
 
   private async startLocalProvider(): Promise<{ success: boolean; message: string }> {
+    if (this.localStartPromise) return this.localStartPromise;
+    this.localStartPromise = this.startLocalProviderInternal();
+    try {
+      return await this.localStartPromise;
+    } finally {
+      this.localStartPromise = null;
+    }
+  }
+
+  private async startLocalProviderInternal(): Promise<{ success: boolean; message: string }> {
     const config = this.configs.find((provider) => provider.id === 'llama-cpp');
     if (!config) return { success: false, message: 'تنظیمات مدل آفلاین پیدا نشد.' };
     if (typeof window === 'undefined' || !window.filmBazDesktop?.isDesktop) {
       return { success: false, message: 'اجرای خودکار فقط در نسخه ویندوز برنامه در دسترس است.' };
     }
     if (!config.localServerPath || !config.localModelPath) {
+      // Preserve compatibility with users who already start llama-server themselves.
+      try {
+        const response = await fetch('http://127.0.0.1:' + (config.localPort || 1234) + '/health', {
+          signal: AbortSignal.timeout(1200),
+        });
+        if (response.ok) return { success: true, message: 'سرور محلیِ از قبل اجراشده آماده است.' };
+      } catch { /* no externally-managed local server */ }
       return { success: false, message: 'ابتدا مسیر llama-server.exe و فایل مدل GGUF را انتخاب کن.' };
     }
     return window.filmBazDesktop.startLocalAi(
