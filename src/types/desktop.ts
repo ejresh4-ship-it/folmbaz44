@@ -46,6 +46,7 @@ export interface LanHostStatus { running: boolean; port: number | null; connecte
 
 export interface DesktopBridge {
   readonly isDesktop: true;
+  chooseLanFolders(): Promise<string[]>;
   startLanHost(paths: string[], port: number): Promise<LanHostStartResult>;
   stopLanHost(): Promise<{ success: boolean }>;
   getLanHostStatus(): Promise<LanHostStatus>;
