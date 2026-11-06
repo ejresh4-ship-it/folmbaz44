@@ -338,6 +338,8 @@ ipcMain.handle('lan:status', async () => ({
   running: Boolean(lanServer?.listening),
   port: lanServer?.listening ? lanPort : null,
   connectedDevices: lanTokens.size,
+  pin: lanServer?.listening ? lanPin : undefined,
+  addresses: lanServer?.listening ? Object.values(os.networkInterfaces()).flatMap((items) => (items || []).filter((item) => !item.internal && item.family === 'IPv4').map((item) => item.address)) : [],
 }));
 
 // --- IPC: Managed local offline AI ---
