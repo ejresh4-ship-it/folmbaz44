@@ -78,7 +78,7 @@ function lanClientIp(req: IncomingMessage): string {
 }
 
 async function handleLanRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  if (req.method === 'OPTIONS') { lanJson(res, 204, {}); return; }
+  if (req.method === 'OPTIONS') { res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD', 'Access-Control-Max-Age': '600' }); res.end(); return; }
   const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
   if (requestUrl.pathname === '/pair' && req.method === 'POST') {
     const ip = lanClientIp(req);
@@ -106,6 +106,8 @@ async function handleLanRequest(req: IncomingMessage, res: ServerResponse): Prom
   }
 
   if (!lanAuthorized(req, requestUrl.pathname === '/api/stream' ? requestUrl.searchParams.get('accessToken') : null)) { lanJson(res, 401, { error: 'دسترسی غیرمجاز است؛ ابتدا جفت‌سازی کن.' }); return; }
+
+  if (requestUrl.pathname === '/api/info' && req.method === 'GET') { lanJson(res, 200, { name: 'FILM BAZ', version: app.getVersion(), protocol: 1 }); return; }
 
   if (requestUrl.pathname === '/api/roots' && req.method === 'GET') {
     lanJson(res, 200, { roots: lanRoots.map(({ id, name }) => ({ id, name })) }); return;
