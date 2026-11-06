@@ -167,7 +167,9 @@ async function handleLanRequest(req: IncomingMessage, res: ServerResponse): Prom
           'Cache-Control': 'no-store',
         });
         if (req.method === 'HEAD') { res.end(); return; }
-        fs.createReadStream(filePath, { start, end }).pipe(res);
+        const stream = fs.createReadStream(filePath, { start, end });
+        stream.on('error', () => res.destroy());
+        stream.pipe(res);
       } else {
         res.writeHead(200, {
           'Content-Type': mime, 'Content-Length': stat.size,
@@ -176,7 +178,9 @@ async function handleLanRequest(req: IncomingMessage, res: ServerResponse): Prom
           'Cache-Control': 'no-store',
         });
         if (req.method === 'HEAD') { res.end(); return; }
-        fs.createReadStream(filePath).pipe(res);
+        const stream = fs.createReadStream(filePath);
+        stream.on('error', () => res.destroy());
+        stream.pipe(res);
       }
     } catch { lanJson(res, 404, { error: 'فایل برای پخش در دسترس نیست.' }); }
     return;
@@ -191,7 +195,7 @@ async function stopLanHost(): Promise<void> {
   lanTokens.clear();
   lanPairAttempts.clear();
   lanRoots = [];
-  if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+  if (server) await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); });
 }
 
 async function startLanHost(paths: string[], requestedPort: number): Promise<{ success: boolean; message: string; port?: number; pin?: string; addresses?: string[] }> {
