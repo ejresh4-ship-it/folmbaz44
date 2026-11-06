@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Wifi, FolderPlus, Play, Square, ShieldCheck, RefreshCw, Copy, AlertTriangle } from 'lucide-react';
+import { Wifi, FolderPlus, Play, Square, ShieldCheck, Copy, AlertTriangle } from 'lucide-react';
 
 type HostResult = {
   success: boolean;
