@@ -41,8 +41,14 @@ export interface PlaybackPreferences {
 }
 
 /** The desktop bridge exposed by the Electron preload script. */
+export interface LanHostStartResult { success: boolean; message: string; port?: number; pin?: string; addresses?: string[]; }
+export interface LanHostStatus { running: boolean; port: number | null; connectedDevices: number; }
+
 export interface DesktopBridge {
   readonly isDesktop: true;
+  startLanHost(paths: string[], port: number): Promise<LanHostStartResult>;
+  stopLanHost(): Promise<{ success: boolean }>;
+  getLanHostStatus(): Promise<LanHostStatus>;
 
   // --- Local offline AI ---
   browseForAiServer(): Promise<string | null>;
