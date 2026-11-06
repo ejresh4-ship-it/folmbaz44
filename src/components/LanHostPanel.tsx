@@ -39,7 +39,7 @@ export default function LanHostPanel() {
   const chooseFolders = async () => {
     if (!bridge) return;
     try {
-      const selected = await bridge.browseForFolders();
+      const selected = await bridge.chooseLanFolders();
       if (selected.length) setFolders((current) => [...new Set([...current, ...selected])]);
     } catch { setMessage('انتخاب پوشه‌ها ناموفق بود.'); }
   };
