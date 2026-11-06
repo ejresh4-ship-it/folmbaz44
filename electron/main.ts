@@ -46,10 +46,11 @@ function lanMime(filePath: string): string {
   return types[ext] || 'application/octet-stream';
 }
 
-function lanAuthorized(req: IncomingMessage): boolean {
+function lanAuthorized(req: IncomingMessage, urlToken?: string | null): boolean {
   const header = req.headers.authorization || '';
-  if (!header.startsWith('Bearer ')) return false;
-  const supplied = Buffer.from(header.slice(7));
+  const candidate = header.startsWith('Bearer ') ? header.slice(7) : (urlToken || '');
+  if (!candidate) return false;
+  const supplied = Buffer.from(candidate);
   for (const token of lanTokens) {
     const expected = Buffer.from(token);
     if (supplied.length === expected.length && timingSafeEqual(supplied, expected)) return true;
@@ -104,7 +105,7 @@ async function handleLanRequest(req: IncomingMessage, res: ServerResponse): Prom
     return;
   }
 
-  if (!lanAuthorized(req)) { lanJson(res, 401, { error: 'دسترسی غیرمجاز است؛ ابتدا جفت‌سازی کن.' }); return; }
+  if (!lanAuthorized(req, requestUrl.pathname === '/api/stream' ? requestUrl.searchParams.get('accessToken') : null)) { lanJson(res, 401, { error: 'دسترسی غیرمجاز است؛ ابتدا جفت‌سازی کن.' }); return; }
 
   if (requestUrl.pathname === '/api/roots' && req.method === 'GET') {
     lanJson(res, 200, { roots: lanRoots.map(({ id, name }) => ({ id, name })) }); return;
