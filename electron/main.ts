@@ -21,6 +21,7 @@ let lanPin = '';
 let lanPort = 47821;
 let lanRoots: LanRoot[] = [];
 const lanTokens = new Set<string>();
+const lanSelectedPaths = new Set<string>();
 const lanPairAttempts = new Map<string, { count: number; since: number }>();
 
 function lanJson(res: ServerResponse, status: number, data: unknown): void {
@@ -194,7 +195,7 @@ async function stopLanHost(): Promise<void> {
 }
 
 async function startLanHost(paths: string[], requestedPort: number): Promise<{ success: boolean; message: string; port?: number; pin?: string; addresses?: string[] }> {
-  if (!Array.isArray(paths) || paths.length < 1 || paths.length > 20 || paths.some((p) => typeof p !== 'string')) {
+  if (!Array.isArray(paths) || paths.length < 1 || paths.length > 20 || paths.some((p) => typeof p !== 'string' || !lanSelectedPaths.has(p))) {
     return { success: false, message: 'حداقل یک و حداکثر ۲۰ پوشه را برای اشتراک انتخاب کن.' };
   }
   if (!Number.isInteger(requestedPort) || requestedPort < 1024 || requestedPort > 65535) {
@@ -306,6 +307,27 @@ app.on('window-all-closed', () => {
 
 
 // --- IPC: Local Wi-Fi sharing host (inside the desktop app) ---
+ipcMain.handle('lan:chooseFolders', async () => {
+  const options = {
+    title: 'انتخاب پوشه‌های مجاز برای اشتراک با گوشی',
+    properties: ['openDirectory', 'multiSelections'] as Array<'openDirectory' | 'multiSelections'>,
+  };
+  const result = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  if (result.canceled) return [];
+  const selected: string[] = [];
+  for (const candidate of result.filePaths) {
+    try {
+      const real = await fs.promises.realpath(candidate);
+      if ((await fs.promises.stat(real)).isDirectory()) {
+        lanSelectedPaths.add(real);
+        selected.push(real);
+      }
+    } catch { /* ignore unavailable paths */ }
+  }
+  return selected;
+});
 ipcMain.handle('lan:start', async (_evt, paths: string[], port: number) => startLanHost(paths, port));
 ipcMain.handle('lan:stop', async () => { await stopLanHost(); return { success: true }; });
 ipcMain.handle('lan:status', async () => ({
