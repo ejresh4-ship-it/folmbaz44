@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Wifi, FolderPlus, Play, Square, ShieldCheck, RefreshCw, Copy, AlertTriangle } from 'lucide-react';
 
 type HostResult = {
@@ -20,7 +20,7 @@ export default function LanHostPanel() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     if (!bridge) return;
     try {
       const status = await bridge.getLanHostStatus();
@@ -28,13 +28,13 @@ export default function LanHostPanel() {
       setDevices(status.connectedDevices);
       if (!status.running) { setPin(''); setAddresses([]); }
     } catch { setMessage('وضعیت سرویس قابل دریافت نیست.'); }
-  };
+  }, [bridge]);
 
   useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => { void refresh(); }, 5000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [refresh]);
 
   const chooseFolders = async () => {
     if (!bridge) return;
