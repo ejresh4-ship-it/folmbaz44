@@ -26,7 +26,8 @@ export default function LanHostPanel() {
       const status = await bridge.getLanHostStatus();
       setRunning(status.running);
       setDevices(status.connectedDevices);
-      if (!status.running) { setPin(''); setAddresses([]); }
+      setPin(status.pin || '');
+      setAddresses(status.addresses || []);
     } catch { setMessage('وضعیت سرویس قابل دریافت نیست.'); }
   }, [bridge]);
 
