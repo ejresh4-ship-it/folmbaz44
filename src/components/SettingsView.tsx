@@ -9,10 +9,12 @@ import {
   Check,
   ChevronLeft,
   Bot,
+  Wifi,
 } from 'lucide-react';
 import MetadataSourcesPanel from '@/components/MetadataSourcesPanel';
 import PlayerSettingsPanel from '@/components/PlayerSettingsPanel';
 import AISettingsPanel from '@/components/AISettingsPanel';
+import LanSharingPanel from '@/components/LanSharingPanel';
 
 interface SettingsViewProps {
   onBack: () => void;
@@ -40,6 +42,13 @@ const sections = [
     icon: Database,
     implemented: true,
     description: 'مدیریت ارائه‌دهندگان داده و اولویت آن‌ها',
+  },
+  {
+    id: 'lan',
+    label: 'اتصال گوشی و کامپیوتر',
+    icon: Wifi,
+    implemented: true,
+    description: 'پخش فیلم و زیرنویس از کامپیوتر روی گوشی در شبکه محلی',
   },
   {
     id: 'player',
@@ -229,6 +238,11 @@ export default function SettingsView({ onBack, onNavigateLibrary }: SettingsView
               <AISettingsPanel />
             )}
             {activeSection === 'player' && <PlayerSettingsPanel />}
+            {activeSection === 'lan' && (
+              <SettingsPanel title="اتصال گوشی و کامپیوتر" desc="پخش فیلم‌های آرشیو روی گوشی از طریق Wi-Fi، بدون دانلود کامل">
+                <LanSharingPanel />
+              </SettingsPanel>
+            )}
             {activeSection === 'offline' && (
               <SettingsPanel title="ذخیره‌سازی آفلاین" desc="دانلود و نگهداری داده و تصاویر برای استفاده بدون اتصال">
                 <p className="text-sm leading-relaxed text-text-secondary">
