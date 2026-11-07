@@ -13,6 +13,10 @@ const scanProgressChannels = new Map<string, (scanned: number, currentPath: stri
 
 contextBridge.exposeInMainWorld('filmBazDesktop', {
   isDesktop: true,
+  chooseLanFolders: (): Promise<string[]> => ipcRenderer.invoke('lan:chooseFolders'),
+  startLanHost: (paths: string[], port: number) => ipcRenderer.invoke('lan:start', paths, port),
+  stopLanHost: () => ipcRenderer.invoke('lan:stop'),
+  getLanHostStatus: () => ipcRenderer.invoke('lan:status'),
 
   // --- Local offline AI ---
   browseForAiServer: (): Promise<string | null> => ipcRenderer.invoke('ai:browseServer'),

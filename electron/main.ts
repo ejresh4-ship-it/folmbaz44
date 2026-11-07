@@ -12,6 +12,286 @@ import { spawn, execSync as nodeExecSync } from 'node:child_process';
 import type { DirEntry, FileInfo, MoveResult } from '../src/types/filesystem';
 import type { DetectedPlayer, PlaybackResult } from '../src/types/desktop';
 
+import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
+import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
+
+type LanRoot = { id: string; name: string; path: string };
+let lanServer: Server | null = null;
+let lanPin = '';
+let lanPort = 47821;
+let lanRoots: LanRoot[] = [];
+const lanTokens = new Set<string>();
+const lanSelectedPaths = new Set<string>();
+const lanPairAttempts = new Map<string, { count: number; since: number }>();
+
+function lanJson(res: ServerResponse, status: number, data: unknown): void {
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD',
+  });
+  res.end(JSON.stringify(data));
+}
+
+function lanMime(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  const types: Record<string, string> = {
+    '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mkv': 'video/x-matroska',
+    '.avi': 'video/x-msvideo', '.mov': 'video/quicktime', '.wmv': 'video/x-ms-wmv',
+    '.webm': 'video/webm', '.mpg': 'video/mpeg', '.mpeg': 'video/mpeg',
+    '.ts': 'video/mp2t', '.m2ts': 'video/mp2t', '.3gp': 'video/3gpp',
+    '.srt': 'application/x-subrip', '.ass': 'text/plain; charset=utf-8', '.ssa': 'text/plain; charset=utf-8',
+    '.vtt': 'text/vtt; charset=utf-8', '.sub': 'text/plain; charset=utf-8', '.smi': 'application/smil; charset=utf-8',
+  };
+  return types[ext] || 'application/octet-stream';
+}
+
+async function lanSidecarSubtitles(root: LanRoot, videoPath: string): Promise<Array<{ name: string; path: string; language: string }>> {
+  const videoStem = path.basename(videoPath, path.extname(videoPath)).toLocaleLowerCase();
+  const subtitleExtensions = new Set(['.srt', '.ass', '.ssa', '.vtt', '.sub', '.smi']);
+  let entries: fs.Dirent[] = [];
+  try { entries = await fs.promises.readdir(path.dirname(videoPath), { withFileTypes: true }); } catch { return []; }
+  const matches = entries.flatMap((entry) => {
+    if (!entry.isFile()) return [];
+    const extension = path.extname(entry.name).toLowerCase();
+    if (!subtitleExtensions.has(extension)) return [];
+    const stem = path.basename(entry.name, extension).toLocaleLowerCase();
+    if (stem !== videoStem && !stem.startsWith(videoStem + '.')) return [];
+    const fullPath = path.join(path.dirname(videoPath), entry.name);
+    return [{
+      name: entry.name,
+      path: path.relative(root.path, fullPath).split(path.sep).join('/'),
+      language: /(^|\\.)(fa|fas|per|persian)(\\.|$)/i.test(stem) ? 'fa' : '',
+    }];
+  });
+  return matches.sort((a, b) =>
+    Number(b.language === 'fa') - Number(a.language === 'fa') ||
+    Number(path.basename(a.name, path.extname(a.name)).toLowerCase() !== videoStem) -
+    Number(path.basename(b.name, path.extname(b.name)).toLowerCase() !== videoStem) ||
+    a.name.localeCompare(b.name));
+}
+
+function lanAuthorized(req: IncomingMessage, urlToken?: string | null): boolean {
+  const header = req.headers.authorization || '';
+  const candidate = header.startsWith('Bearer ') ? header.slice(7) : (urlToken || '');
+  if (!candidate) return false;
+  const supplied = Buffer.from(candidate);
+  for (const token of lanTokens) {
+    const expected = Buffer.from(token);
+    if (supplied.length === expected.length && timingSafeEqual(supplied, expected)) return true;
+  }
+  return false;
+}
+
+async function lanResolve(root: LanRoot, relativePath: string): Promise<string | null> {
+  const segments = relativePath.split(/[\\/]+/).filter(Boolean);
+  if (segments.some((part) => part === '.' || part === '..' || part.includes('\0'))) return null;
+  const candidate = path.resolve(root.path, ...segments);
+  const relative = path.relative(root.path, candidate);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+  try {
+    const realRoot = await fs.promises.realpath(root.path);
+    const realCandidate = await fs.promises.realpath(candidate);
+    const realRelative = path.relative(realRoot, realCandidate);
+    if (realRelative.startsWith('..') || path.isAbsolute(realRelative)) return null;
+    return realCandidate;
+  } catch { return null; }
+}
+
+function lanClientIp(req: IncomingMessage): string {
+  return req.socket.remoteAddress || 'unknown';
+}
+
+async function handleLanRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (req.method === 'OPTIONS') { res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD', 'Access-Control-Max-Age': '600' }); res.end(); return; }
+  const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
+  if (requestUrl.pathname === '/pair' && req.method === 'POST') {
+    const ip = lanClientIp(req);
+    const now = Date.now();
+    const attempts = lanPairAttempts.get(ip) || { count: 0, since: now };
+    if (now - attempts.since > 120_000) { attempts.count = 0; attempts.since = now; }
+    attempts.count += 1;
+    lanPairAttempts.set(ip, attempts);
+    if (attempts.count > 8) { lanJson(res, 429, { error: 'تعداد تلاش‌ها زیاد است؛ دو دقیقه بعد دوباره امتحان کن.' }); return; }
+    let raw = '';
+    for await (const chunk of req) {
+      raw += chunk.toString();
+      if (raw.length > 2048) { lanJson(res, 413, { error: 'درخواست بیش از حد بزرگ است.' }); return; }
+    }
+    let submitted = '';
+    try { submitted = String((JSON.parse(raw) as { pin?: unknown }).pin || ''); } catch { /* invalid JSON */ }
+    if (!/^\d{6}$/.test(submitted) || submitted !== lanPin) {
+      lanJson(res, 401, { error: 'کد اتصال نادرست یا منقضی شده است.' }); return;
+    }
+    const token = randomBytes(32).toString('base64url');
+    lanTokens.add(token);
+    lanPairAttempts.delete(ip);
+    lanJson(res, 200, { token });
+    return;
+  }
+
+  if (!lanAuthorized(req, (requestUrl.pathname === '/api/stream' || requestUrl.pathname === '/api/subtitle') ? requestUrl.searchParams.get('accessToken') : null)) { lanJson(res, 401, { error: 'دسترسی غیرمجاز است؛ ابتدا جفت‌سازی کن.' }); return; }
+
+  if (requestUrl.pathname === '/api/info' && req.method === 'GET') { lanJson(res, 200, { name: 'FILM BAZ', version: app.getVersion(), protocol: 1 }); return; }
+
+  if (requestUrl.pathname === '/api/roots' && req.method === 'GET') {
+    lanJson(res, 200, { roots: lanRoots.map(({ id, name }) => ({ id, name })) }); return;
+  }
+
+  const rootId = requestUrl.searchParams.get('rootId') || '';
+  const root = lanRoots.find((entry) => entry.id === rootId);
+  if (!root) { lanJson(res, 404, { error: 'پوشه اشتراکی پیدا نشد.' }); return; }
+
+  const relativePath = requestUrl.searchParams.get('path') || '';
+  const filePath = await lanResolve(root, relativePath);
+  if (!filePath) { lanJson(res, 404, { error: 'مسیر فایل معتبر نیست یا فایل وجود ندارد.' }); return; }
+
+  if (requestUrl.pathname === '/api/files' && req.method === 'GET') {
+    try {
+      const entries = await fs.promises.readdir(filePath, { withFileTypes: true });
+      const result = [];
+      for (const entry of entries) {
+        if (entry.isSymbolicLink()) continue;
+        const fullPath = path.join(filePath, entry.name);
+        try {
+          const stat = await fs.promises.stat(fullPath);
+          if (!stat.isDirectory() && !stat.isFile()) continue;
+          const relativeEntryPath = path.relative(root.path, fullPath).split(path.sep).join('/');
+          const mime = stat.isFile() ? lanMime(fullPath) : 'inode/directory';
+          const subtitles = stat.isFile() && mime.startsWith('video/') ? await lanSidecarSubtitles(root, fullPath) : [];
+          result.push({
+            name: entry.name,
+            isDirectory: stat.isDirectory(),
+            size: stat.size,
+            mime,
+            path: relativeEntryPath,
+            subtitles,
+          });
+        } catch { /* ignore inaccessible entries */ }
+      }
+      result.sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name));
+      lanJson(res, 200, { entries: result });
+    } catch { lanJson(res, 400, { error: 'خواندن پوشه ناموفق بود.' }); }
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/subtitle' && req.method === 'GET') {
+    try {
+      const extension = path.extname(filePath).toLowerCase();
+      const subtitleExtensions = new Set(['.srt', '.ass', '.ssa', '.vtt', '.sub', '.smi']);
+      const stat = await fs.promises.stat(filePath);
+      if (!stat.isFile() || !subtitleExtensions.has(extension)) {
+        lanJson(res, 403, { error: 'فقط فایل زیرنویس قابل دریافت است.' });
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': lanMime(filePath),
+        'Content-Length': stat.size,
+        'Content-Disposition': "inline; filename*=UTF-8''" + encodeURIComponent(path.basename(filePath)),
+        'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
+      });
+      const subtitleStream = fs.createReadStream(filePath);
+      subtitleStream.on('error', () => res.destroy());
+      subtitleStream.pipe(res);
+    } catch {
+      lanJson(res, 404, { error: 'زیرنویس برای دریافت در دسترس نیست.' });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/stream' && (req.method === 'GET' || req.method === 'HEAD')) {
+    try {
+      const stat = await fs.promises.stat(filePath);
+      if (!stat.isFile()) { lanJson(res, 400, { error: 'مسیر انتخاب‌شده فایل نیست.' }); return; }
+      const mime = lanMime(filePath);
+      const range = req.headers.range;
+      const match = range?.match(/^bytes=(\d*)-(\d*)$/);
+      if (match) {
+        const start = match[1] ? Number(match[1]) : Math.max(0, stat.size - Number(match[2] || 0));
+        const end = match[2] && match[1] ? Math.min(Number(match[2]), stat.size - 1) : stat.size - 1;
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || start >= stat.size) {
+          res.writeHead(416, { 'Content-Range': `bytes */${stat.size}`, 'Access-Control-Allow-Origin': '*' }); res.end(); return;
+        }
+        res.writeHead(206, {
+          'Content-Type': mime, 'Content-Length': end - start + 1,
+          'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+          'Accept-Ranges': 'bytes', 'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Authorization, Range',
+          'Cache-Control': 'no-store',
+        });
+        if (req.method === 'HEAD') { res.end(); return; }
+        const stream = fs.createReadStream(filePath, { start, end });
+        stream.on('error', () => res.destroy());
+        stream.pipe(res);
+      } else {
+        res.writeHead(200, {
+          'Content-Type': mime, 'Content-Length': stat.size,
+          'Accept-Ranges': 'bytes', 'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Authorization, Range',
+          'Cache-Control': 'no-store',
+        });
+        if (req.method === 'HEAD') { res.end(); return; }
+        const stream = fs.createReadStream(filePath);
+        stream.on('error', () => res.destroy());
+        stream.pipe(res);
+      }
+    } catch { lanJson(res, 404, { error: 'فایل برای پخش در دسترس نیست.' }); }
+    return;
+  }
+  lanJson(res, 404, { error: 'مسیر در سرویس FILM BAZ وجود ندارد.' });
+}
+
+async function stopLanHost(): Promise<void> {
+  const server = lanServer;
+  lanServer = null;
+  lanPin = '';
+  lanTokens.clear();
+  lanPairAttempts.clear();
+  lanRoots = [];
+  if (server) await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); });
+}
+
+async function startLanHost(paths: string[], requestedPort: number): Promise<{ success: boolean; message: string; port?: number; pin?: string; addresses?: string[] }> {
+  if (!Array.isArray(paths) || paths.length < 1 || paths.length > 20 || paths.some((p) => typeof p !== 'string' || !lanSelectedPaths.has(p))) {
+    return { success: false, message: 'حداقل یک و حداکثر ۲۰ پوشه را برای اشتراک انتخاب کن.' };
+  }
+  if (!Number.isInteger(requestedPort) || requestedPort < 1024 || requestedPort > 65535) {
+    return { success: false, message: 'شماره پورت باید بین ۱۰۲۴ تا ۶۵۵۳۵ باشد.' };
+  }
+  const roots: LanRoot[] = [];
+  for (const selected of paths) {
+    try {
+      const real = await fs.promises.realpath(selected);
+      const stat = await fs.promises.stat(real);
+      if (!stat.isDirectory()) continue;
+      roots.push({ id: randomBytes(8).toString('hex'), name: path.basename(real) || real, path: real });
+    } catch { /* ignore invalid selected folders */ }
+  }
+  if (!roots.length) return { success: false, message: 'هیچ پوشه معتبر و قابل‌دسترسی انتخاب نشده است.' };
+  await stopLanHost();
+  lanRoots = roots;
+  lanPort = requestedPort;
+  lanPin = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  const server = createServer((req, res) => { void handleLanRequest(req, res).catch(() => lanJson(res, 500, { error: 'خطای داخلی سرویس محلی.' })); });
+  lanServer = server;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(lanPort, '0.0.0.0', () => { server.removeListener('error', reject); resolve(); });
+    });
+  } catch (error) {
+    lanServer = null; lanRoots = []; lanPin = '';
+    return { success: false, message: error instanceof Error ? error.message : 'اجرای سرویس محلی ناموفق بود.' };
+  }
+  const addresses = Object.values(os.networkInterfaces()).flatMap((items) =>
+    (items || []).filter((item) => !item.internal && item.family === 'IPv4').map((item) => item.address));
+  return { success: true, message: 'سرویس اشتراک‌گذاری در شبکه محلی فعال شد.', port: lanPort, pin: lanPin, addresses };
+}
+
+
 app.setAppUserModelId('com.filmbaz.desktop');
 
 let mainWindow: BrowserWindow | null = null;
@@ -85,6 +365,38 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+
+// --- IPC: Local Wi-Fi sharing host (inside the desktop app) ---
+ipcMain.handle('lan:chooseFolders', async () => {
+  const options = {
+    title: 'انتخاب پوشه‌های مجاز برای اشتراک با گوشی',
+    properties: ['openDirectory', 'multiSelections'] as Array<'openDirectory' | 'multiSelections'>,
+  };
+  const result = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  if (result.canceled) return [];
+  const selected: string[] = [];
+  for (const candidate of result.filePaths) {
+    try {
+      const real = await fs.promises.realpath(candidate);
+      if ((await fs.promises.stat(real)).isDirectory()) {
+        lanSelectedPaths.add(real);
+        selected.push(real);
+      }
+    } catch { /* ignore unavailable paths */ }
+  }
+  return selected;
+});
+ipcMain.handle('lan:start', async (_evt, paths: string[], port: number) => startLanHost(paths, port));
+ipcMain.handle('lan:stop', async () => { await stopLanHost(); return { success: true }; });
+ipcMain.handle('lan:status', async () => ({
+  running: Boolean(lanServer?.listening),
+  port: lanServer?.listening ? lanPort : null,
+  connectedDevices: lanTokens.size,
+  pin: lanServer?.listening ? lanPin : undefined,
+  addresses: lanServer?.listening ? Object.values(os.networkInterfaces()).flatMap((items) => (items || []).filter((item) => !item.internal && item.family === 'IPv4').map((item) => item.address)) : [],
+}));
 
 // --- IPC: Managed local offline AI ---
 ipcMain.handle('ai:browseServer', async (): Promise<string | null> => {
@@ -213,6 +525,7 @@ ipcMain.handle('ai:stopLocal', async (): Promise<void> => {
 
 app.on('before-quit', () => {
   void stopLocalAi();
+  void stopLanHost();
 });
 
 // Download remote artwork in Electron's main process. This avoids renderer CORS

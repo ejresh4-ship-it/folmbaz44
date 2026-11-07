@@ -9,10 +9,12 @@ import {
   Check,
   ChevronLeft,
   Bot,
+  Wifi,
 } from 'lucide-react';
 import MetadataSourcesPanel from '@/components/MetadataSourcesPanel';
 import PlayerSettingsPanel from '@/components/PlayerSettingsPanel';
 import AISettingsPanel from '@/components/AISettingsPanel';
+import LanHostPanel from '@/components/LanHostPanel';
 
 interface SettingsViewProps {
   onBack: () => void;
@@ -54,6 +56,13 @@ const sections = [
     icon: Bot,
     implemented: true,
     description: 'پیکربندی ارائه‌دهندگان هوش مصنوعی و مدل آفلاین',
+  },
+  {
+    id: 'lan',
+    label: 'اتصال به گوشی',
+    icon: Wifi,
+    implemented: true,
+    description: 'اشتراک‌گذاری امن آرشیو روی وای‌فای محلی',
   },
   {
     id: 'offline',
@@ -229,6 +238,7 @@ export default function SettingsView({ onBack, onNavigateLibrary }: SettingsView
               <AISettingsPanel />
             )}
             {activeSection === 'player' && <PlayerSettingsPanel />}
+            {activeSection === 'lan' && <LanHostPanel />}
             {activeSection === 'offline' && (
               <SettingsPanel title="ذخیره‌سازی آفلاین" desc="دانلود و نگهداری داده و تصاویر برای استفاده بدون اتصال">
                 <p className="text-sm leading-relaxed text-text-secondary">
