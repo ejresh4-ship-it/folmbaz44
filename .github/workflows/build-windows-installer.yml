@@ -7,6 +7,7 @@ on:
       - master
       - archive/known-good-41409827776
       - feature/metadata-adapters-smart-bulk-organize
+      - feature/desktop-integrated-lan-streaming
     tags:
       - 'v*'
   pull_request:
@@ -14,6 +15,7 @@ on:
       - main
       - master
       - archive/known-good-41409827776
+      - feature/desktop-integrated-lan-streaming
   workflow_dispatch:
 
 jobs:
