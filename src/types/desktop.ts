@@ -40,6 +40,13 @@ export interface PlaybackPreferences {
   manualExecutablePath?: string;
 }
 
+/** Shared folder used by the built-in phone connection. */
+export interface LanRoot { id: string; name: string; path: string }
+export interface LanServerStatus {
+  running: boolean; port: number; pin: string; addresses: string[];
+  roots: Array<{ id: string; name: string }>;
+}
+
 /** The desktop bridge exposed by the Electron preload script. */
 export interface DesktopBridge {
   readonly isDesktop: true;
@@ -49,6 +56,10 @@ export interface DesktopBridge {
   browseForAiModel(): Promise<string | null>;
   startLocalAi(serverPath: string, modelPath: string, port: number): Promise<{ success: boolean; message: string }>;
   stopLocalAi(): Promise<void>;
+
+  // --- Embedded LAN streaming ---
+  getLanStatus(): Promise<LanServerStatus>;
+  configureLanSharing(roots: LanRoot[]): Promise<{ success: boolean; message: string; status?: LanServerStatus }>;
 
   // --- Artwork download ---
   /** Fetch a remote artwork image in Electron's main process, bypassing renderer CORS. */
