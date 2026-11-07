@@ -74,7 +74,7 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Restore the user's LAN sharing configuration and start the embedded service silently.
   try {
     const saved = JSON.parse(await fs.promises.readFile(path.join(app.getPath('userData'), 'lan-sharing.json'), 'utf8')) as LanRoot[];
