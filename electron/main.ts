@@ -42,9 +42,35 @@ function lanMime(filePath: string): string {
     '.avi': 'video/x-msvideo', '.mov': 'video/quicktime', '.wmv': 'video/x-ms-wmv',
     '.webm': 'video/webm', '.mpg': 'video/mpeg', '.mpeg': 'video/mpeg',
     '.ts': 'video/mp2t', '.m2ts': 'video/mp2t', '.3gp': 'video/3gpp',
-    '.srt': 'application/x-subrip', '.ass': 'text/plain', '.ssa': 'text/plain',
+    '.srt': 'application/x-subrip', '.ass': 'text/plain; charset=utf-8', '.ssa': 'text/plain; charset=utf-8',
+    '.vtt': 'text/vtt; charset=utf-8', '.sub': 'text/plain; charset=utf-8', '.smi': 'application/smil; charset=utf-8',
   };
   return types[ext] || 'application/octet-stream';
+}
+
+async function lanSidecarSubtitles(root: LanRoot, videoPath: string): Promise<Array<{ name: string; path: string; language: string }>> {
+  const videoStem = path.basename(videoPath, path.extname(videoPath)).toLocaleLowerCase();
+  const subtitleExtensions = new Set(['.srt', '.ass', '.ssa', '.vtt', '.sub', '.smi']);
+  let entries: fs.Dirent[] = [];
+  try { entries = await fs.promises.readdir(path.dirname(videoPath), { withFileTypes: true }); } catch { return []; }
+  const matches = entries.flatMap((entry) => {
+    if (!entry.isFile()) return [];
+    const extension = path.extname(entry.name).toLowerCase();
+    if (!subtitleExtensions.has(extension)) return [];
+    const stem = path.basename(entry.name, extension).toLocaleLowerCase();
+    if (stem !== videoStem && !stem.startsWith(videoStem + '.')) return [];
+    const fullPath = path.join(path.dirname(videoPath), entry.name);
+    return [{
+      name: entry.name,
+      path: path.relative(root.path, fullPath).split(path.sep).join('/'),
+      language: /(^|\\.)(fa|fas|per|persian)(\\.|$)/i.test(stem) ? 'fa' : '',
+    }];
+  });
+  return matches.sort((a, b) =>
+    Number(b.language === 'fa') - Number(a.language === 'fa') ||
+    Number(path.basename(a.name, path.extname(a.name)).toLowerCase() !== videoStem) -
+    Number(path.basename(b.name, path.extname(b.name)).toLowerCase() !== videoStem) ||
+    a.name.localeCompare(b.name));
 }
 
 function lanAuthorized(req: IncomingMessage, urlToken?: string | null): boolean {
@@ -106,7 +132,7 @@ async function handleLanRequest(req: IncomingMessage, res: ServerResponse): Prom
     return;
   }
 
-  if (!lanAuthorized(req, requestUrl.pathname === '/api/stream' ? requestUrl.searchParams.get('accessToken') : null)) { lanJson(res, 401, { error: 'دسترسی غیرمجاز است؛ ابتدا جفت‌سازی کن.' }); return; }
+  if (!lanAuthorized(req, (requestUrl.pathname === '/api/stream' || requestUrl.pathname === '/api/subtitle') ? requestUrl.searchParams.get('accessToken') : null)) { lanJson(res, 401, { error: 'دسترسی غیرمجاز است؛ ابتدا جفت‌سازی کن.' }); return; }
 
   if (requestUrl.pathname === '/api/info' && req.method === 'GET') { lanJson(res, 200, { name: 'FILM BAZ', version: app.getVersion(), protocol: 1 }); return; }
 
@@ -132,17 +158,47 @@ async function handleLanRequest(req: IncomingMessage, res: ServerResponse): Prom
         try {
           const stat = await fs.promises.stat(fullPath);
           if (!stat.isDirectory() && !stat.isFile()) continue;
+          const relativeEntryPath = path.relative(root.path, fullPath).split(path.sep).join('/');
+          const mime = stat.isFile() ? lanMime(fullPath) : 'inode/directory';
+          const subtitles = stat.isFile() && mime.startsWith('video/') ? await lanSidecarSubtitles(root, fullPath) : [];
           result.push({
             name: entry.name,
             isDirectory: stat.isDirectory(),
             size: stat.size,
-            mime: stat.isFile() ? lanMime(fullPath) : 'inode/directory',
+            mime,
+            path: relativeEntryPath,
+            subtitles,
           });
         } catch { /* ignore inaccessible entries */ }
       }
       result.sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name));
       lanJson(res, 200, { entries: result });
     } catch { lanJson(res, 400, { error: 'خواندن پوشه ناموفق بود.' }); }
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/subtitle' && req.method === 'GET') {
+    try {
+      const extension = path.extname(filePath).toLowerCase();
+      const subtitleExtensions = new Set(['.srt', '.ass', '.ssa', '.vtt', '.sub', '.smi']);
+      const stat = await fs.promises.stat(filePath);
+      if (!stat.isFile() || !subtitleExtensions.has(extension)) {
+        lanJson(res, 403, { error: 'فقط فایل زیرنویس قابل دریافت است.' });
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': lanMime(filePath),
+        'Content-Length': stat.size,
+        'Content-Disposition': "inline; filename*=UTF-8''" + encodeURIComponent(path.basename(filePath)),
+        'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
+      });
+      const subtitleStream = fs.createReadStream(filePath);
+      subtitleStream.on('error', () => res.destroy());
+      subtitleStream.pipe(res);
+    } catch {
+      lanJson(res, 404, { error: 'زیرنویس برای دریافت در دسترس نیست.' });
+    }
     return;
   }
 
