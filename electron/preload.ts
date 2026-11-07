@@ -21,6 +21,10 @@ contextBridge.exposeInMainWorld('filmBazDesktop', {
     ipcRenderer.invoke('ai:startLocal', serverPath, modelPath, port),
   stopLocalAi: (): Promise<void> => ipcRenderer.invoke('ai:stopLocal'),
 
+  // --- Embedded LAN streaming ---
+  getLanStatus: () => ipcRenderer.invoke('lan:status'),
+  configureLanSharing: (roots: import('../src/types/desktop').LanRoot[]) => ipcRenderer.invoke('lan:configure', roots),
+
   // --- Artwork download ---
   downloadImage: (url: string): Promise<string | null> => ipcRenderer.invoke('images:download', url),
 
