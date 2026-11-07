@@ -11,6 +11,7 @@ import * as os from 'node:os';
 import { spawn, execSync as nodeExecSync } from 'node:child_process';
 import type { DirEntry, FileInfo, MoveResult } from '../src/types/filesystem';
 import type { DetectedPlayer, PlaybackResult } from '../src/types/desktop';
+import { startLanServer, stopLanServer, getLanServerStatus, type LanRoot } from './lanServer';
 
 app.setAppUserModelId('com.filmbaz.desktop');
 
@@ -74,6 +75,11 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Restore the user's LAN sharing configuration and start the embedded service silently.
+  try {
+    const saved = JSON.parse(await fs.promises.readFile(path.join(app.getPath('userData'), 'lan-sharing.json'), 'utf8')) as LanRoot[];
+    if (Array.isArray(saved) && saved.length) await startLanServer(saved);
+  } catch { /* first run or unavailable shared folder: service stays off */ }
   createWindow();
 
   app.on('activate', () => {
@@ -213,6 +219,27 @@ ipcMain.handle('ai:stopLocal', async (): Promise<void> => {
 
 app.on('before-quit', () => {
   void stopLocalAi();
+  void stopLanServer();
+});
+
+// --- IPC: Embedded LAN streaming (no separate companion application) ---
+const lanConfigPath = (): string => path.join(app.getPath('userData'), 'lan-sharing.json');
+ipcMain.handle('lan:status', () => getLanServerStatus());
+ipcMain.handle('lan:configure', async (_evt, roots: LanRoot[]): Promise<{ success: boolean; message: string; status?: ReturnType<typeof getLanServerStatus> }> => {
+  try {
+    if (!Array.isArray(roots) || roots.length === 0) {
+      await stopLanServer();
+      await fs.promises.rm(lanConfigPath(), { force: true });
+      return { success: true, message: 'اشتراک‌گذاری شبکه متوقف شد.', status: getLanServerStatus() };
+    }
+    const safeRoots = roots.map((root) => ({ id: String(root.id), name: String(root.name), path: path.resolve(String(root.path)) }));
+    const status = await startLanServer(safeRoots);
+    await fs.promises.mkdir(path.dirname(lanConfigPath()), { recursive: true });
+    await fs.promises.writeFile(lanConfigPath(), JSON.stringify(safeRoots, null, 2), { mode: 0o600 });
+    return { success: true, message: 'اتصال شبکه داخل FILM BAZ فعال شد.', status };
+  } catch (error) {
+    return { success: false, message: error instanceof Error ? error.message : String(error), status: getLanServerStatus() };
+  }
 });
 
 // Download remote artwork in Electron's main process. This avoids renderer CORS
